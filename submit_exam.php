@@ -15,7 +15,7 @@ if ($exam_id <= 0 || empty($answers) || empty($emp_id)) {
     die("<div style='color:red;'>Missing exam, employee, or answers data.</div>");
 }
 
-// 1️⃣ Record the exam attempt in Answers table
+// 🧾 Record the exam attempt in Answers table
 $sql = "
     INSERT INTO teipiexam.dbo.Answers (Emp_ID, Exam_ID, Date_Taken)
     OUTPUT INSERTED.Answers_ID
@@ -34,12 +34,30 @@ if (!$row || !isset($row['Answers_ID'])) {
 }
 $answers_id = $row['Answers_ID'];
 
-// 2️⃣ Evaluate each answer and save details
+/* 🧠 Normalization function for more forgiving matching */
+function normalizeAnswer($text) {
+    // Convert to lowercase
+    $text = mb_strtolower($text, 'UTF-8');
+
+    // Replace punctuation with spaces
+    $text = preg_replace('/[.,;:()\-]/u', ' ', $text);
+
+    // Remove any non-alphanumeric characters except spaces
+    $text = preg_replace('/[^a-z0-9\s]/u', '', $text);
+
+    // Collapse multiple spaces
+    $text = preg_replace('/\s+/', ' ', $text);
+
+    // Trim
+    return trim($text);
+}
+
+/* 🧮 Evaluate each answer */
 $total_questions = count($answers);
 $correct = 0;
 
 foreach ($answers as $question_id => $user_answer) {
-    // Fetch the correct answer + question type
+    // Fetch correct answer & type
     $q_sql = "
         SELECT q.Question_Type, ca.Correct_Answer
         FROM teipiexam.dbo.Questions q
@@ -64,16 +82,30 @@ foreach ($answers as $question_id => $user_answer) {
     $correct_answer = trim($q_row['Correct_Answer'] ?? '');
     $user_answer    = trim($user_answer);
 
-    // Use strcasecmp for enumeration (case-insensitive)
-    if (strcasecmp($question_type, 'Enumeration') === 0) {
-        $isCorrect = (strcasecmp($user_answer, $correct_answer) === 0) ? 1 : 0;
+    /* 🧠 Apply normalization for Enumeration and Fill-in questions */
+    if (strcasecmp($question_type, 'Enumeration') === 0 || strcasecmp($question_type, 'Identification') === 0) {
+        $normalized_user    = normalizeAnswer($user_answer);
+        $normalized_correct = normalizeAnswer($correct_answer);
+
+        // Split into words (treating order as unimportant)
+        $user_items    = array_filter(explode(' ', $normalized_user));
+        $correct_items = array_filter(explode(' ', $normalized_correct));
+
+        sort($user_items);
+        sort($correct_items);
+
+        // Compare sets
+        $isCorrect = (implode(' ', $user_items) === implode(' ', $correct_items)) ? 1 : 0;
     } else {
-        $isCorrect = ($user_answer === $correct_answer) ? 1 : 0;
+        // Other question types (e.g. Multiple Choice)
+        $normalized_user    = normalizeAnswer($user_answer);
+        $normalized_correct = normalizeAnswer($correct_answer);
+        $isCorrect = ($normalized_user === $normalized_correct) ? 1 : 0;
     }
 
     if ($isCorrect) $correct++;
 
-    // Insert into AnswerDetails
+    // 📝 Insert answer details
     $insert_sql = "
         INSERT INTO teipiexam.dbo.AnswerDetails (Answers_ID, Question_ID, User_Answer, IsCorrect)
         VALUES (?, ?, ?, ?)
@@ -88,7 +120,7 @@ foreach ($answers as $question_id => $user_answer) {
     sqlsrv_free_stmt($q_stmt);
 }
 
-// 3️⃣ Save final result summary
+/* 🏁 Save final result summary */
 $sql = "
     INSERT INTO teipiexam.dbo.Results (Emp_ID, Exam_ID, Score, TotalQuestions, Date_Completed)
     VALUES (?, ?, ?, ?, GETDATE())
@@ -100,7 +132,7 @@ if ($result_stmt === false) {
     die("<pre style='color:red;'>Error inserting into Results:\n" . print_r(sqlsrv_errors(), true) . "</pre>");
 }
 
-// 4️⃣ Redirect to result page
+/* ✅ Redirect to results page */
 header("Location: result.php?exam_id=$exam_id&score=$correct&total=$total_questions");
 exit;
 ?>
