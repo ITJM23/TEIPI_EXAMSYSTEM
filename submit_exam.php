@@ -33,20 +33,24 @@ if (!$answers_id) {
     die("<div style='color:red;'>Failed to record exam attempt.</div>");
 }
 
-/* 🧠 Normalize answer */
 function normalizeAnswer($text) {
+    // Convert to lowercase
     $text = mb_strtolower($text, 'UTF-8');
 
     // Convert ± to + (treat them as equivalent)
     $text = str_replace('±', '+', $text);
 
-    // Remove punctuation that doesn't affect meaning, keep +, -, ., and space
+    // Remove punctuation except +, -, ., and space
     $text = preg_replace('/[,:;()]/u', ' ', $text);
     $text = preg_replace('/[^a-z0-9\+\-\.\s]/u', '', $text);
-    $text = preg_replace('/\s+/', ' ', $text);
 
+    // Remove ALL spaces (so it's not sensitive to spaces)
+    $text = preg_replace('/\s+/', '', $text);
+
+    // Trim again in case
     return trim($text);
 }
+
 
 /* 🧮 Evaluation */
 $total_questions = 0;
