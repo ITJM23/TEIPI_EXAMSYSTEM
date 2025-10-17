@@ -6,16 +6,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     die("Invalid request.");
 }
 
-// Get exam and employee info
+// 🧾 Get basic info
 $exam_id = isset($_POST['exam_id']) ? intval($_POST['exam_id']) : 0;
 $answers = $_POST['answer'] ?? [];
-$emp_id  = $emp_id ?? ($_COOKIE['EIMS_emp_Id'] ?? ''); // from sessions.php or cookie
+$emp_id  = $emp_id ?? ($_COOKIE['EIMS_emp_Id'] ?? '');
 
 if ($exam_id <= 0 || empty($answers) || empty($emp_id)) {
     die("<div style='color:red;'>Missing exam, employee, or answers data.</div>");
 }
 
-// 🧾 Record the exam attempt in Answers table
+// 🧾 Record attempt
 $sql = "
     INSERT INTO teipiexam.dbo.Answers (Emp_ID, Exam_ID, Date_Taken)
     OUTPUT INSERTED.Answers_ID
@@ -23,116 +23,123 @@ $sql = "
 ";
 $params = [$emp_id, $exam_id];
 $stmt = sqlsrv_query($con3, $sql, $params);
-
-if ($stmt === false) {
-    die("<pre style='color:red;'>Error inserting into Answers:\n" . print_r(sqlsrv_errors(), true) . "</pre>");
-}
+if ($stmt === false) die("<pre style='color:red;'>Error inserting Answers:\n" . print_r(sqlsrv_errors(), true) . "</pre>");
 
 $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
-if (!$row || !isset($row['Answers_ID'])) {
-    die("<div style='color:red;'>Failed to record exam attempt.</div>");
-}
-$answers_id = $row['Answers_ID'];
+$answers_id = $row['Answers_ID'] ?? null;
+if (!$answers_id) die("<div style='color:red;'>Failed to record exam attempt.</div>");
 
-/* 🧠 Normalization function for more forgiving matching */
+/* 🧠 Normalize for forgiving matching */
 function normalizeAnswer($text) {
-    // Convert to lowercase
     $text = mb_strtolower($text, 'UTF-8');
-
-    // Replace punctuation with spaces
     $text = preg_replace('/[.,;:()\-]/u', ' ', $text);
-
-    // Remove any non-alphanumeric characters except spaces
     $text = preg_replace('/[^a-z0-9\s]/u', '', $text);
-
-    // Collapse multiple spaces
     $text = preg_replace('/\s+/', ' ', $text);
-
-    // Trim
     return trim($text);
 }
 
-/* 🧮 Evaluate each answer */
-$total_questions = count($answers);
-$correct = 0;
+/* 🧮 Evaluation */
+$total_questions = 0;
+$total_score = 0;
 
 foreach ($answers as $question_id => $user_answer) {
-    // Fetch correct answer & type
+    $total_questions++;
+
+    // Handle multiple inputs (enumeration)
+    $user_answers = is_array($user_answer) ? $user_answer : [$user_answer];
+    $user_answers = array_map('trim', $user_answers);
+    $user_answers = array_filter($user_answers, fn($a) => $a !== '');
+
+    // Fetch question type & all correct answers
     $q_sql = "
         SELECT q.Question_Type, ca.Correct_Answer
         FROM teipiexam.dbo.Questions q
-        INNER JOIN teipiexam.dbo.Correct_Answers ca
-        ON q.Question_ID = ca.Question_ID
+        LEFT JOIN teipiexam.dbo.Correct_Answers ca ON q.Question_ID = ca.Question_ID
         WHERE q.Question_ID = ?
     ";
     $q_stmt = sqlsrv_query($con3, $q_sql, [$question_id]);
-
     if ($q_stmt === false) {
-        echo "<pre style='color:orange;'>Query failed for Question_ID {$question_id}:\n" . print_r(sqlsrv_errors(), true) . "</pre>";
+        echo "<pre style='color:orange;'>Query failed for Question_ID $question_id:\n" . print_r(sqlsrv_errors(), true) . "</pre>";
         continue;
     }
 
-    $q_row = sqlsrv_fetch_array($q_stmt, SQLSRV_FETCH_ASSOC);
-    if (!$q_row) {
-        echo "<div style='color:orange;'>No correct answer found for Question_ID {$question_id}.</div>";
+    $correct_answers = [];
+    $question_type = 'Text';
+    while ($r = sqlsrv_fetch_array($q_stmt, SQLSRV_FETCH_ASSOC)) {
+        $question_type = $r['Question_Type'];
+        if (!empty($r['Correct_Answer'])) {
+            $correct_answers[] = normalizeAnswer($r['Correct_Answer']);
+        }
+    }
+    sqlsrv_free_stmt($q_stmt);
+
+    if (empty($correct_answers)) {
+        echo "<div style='color:orange;'>No correct answers found for Question_ID $question_id.</div>";
         continue;
     }
 
-    $question_type  = trim($q_row['Question_Type']);
-    $correct_answer = trim($q_row['Correct_Answer'] ?? '');
-    $user_answer    = trim($user_answer);
+    $earned_points = 0;
+    $isCorrect = 0;
 
-    /* 🧠 Apply normalization for Enumeration and Fill-in questions */
-    if (strcasecmp($question_type, 'Enumeration') === 0 || strcasecmp($question_type, 'Identification') === 0) {
-        $normalized_user    = normalizeAnswer($user_answer);
-        $normalized_correct = normalizeAnswer($correct_answer);
+    // 🧩 ENUMERATION CHECKING
+    if (strcasecmp($question_type, 'Enumeration') === 0) {
+        $correct_remaining = $correct_answers; // clone
+        foreach ($user_answers as $ua) {
+            $n_user = normalizeAnswer($ua);
+            foreach ($correct_remaining as $idx => $ca) {
+                if ($n_user === $ca) {
+                    $earned_points++;
+                    unset($correct_remaining[$idx]); // prevent double count
+                    break;
+                }
+            }
+        }
 
-        // Split into words (treating order as unimportant)
-        $user_items    = array_filter(explode(' ', $normalized_user));
-        $correct_items = array_filter(explode(' ', $normalized_correct));
-
-        sort($user_items);
-        sort($correct_items);
-
-        // Compare sets
-        $isCorrect = (implode(' ', $user_items) === implode(' ', $correct_items)) ? 1 : 0;
-    } else {
-        // Other question types (e.g. Multiple Choice)
-        $normalized_user    = normalizeAnswer($user_answer);
-        $normalized_correct = normalizeAnswer($correct_answer);
-        $isCorrect = ($normalized_user === $normalized_correct) ? 1 : 0;
+        $max_points = count($correct_answers);
+        $question_score = $max_points > 0 ? ($earned_points / $max_points) : 0;
+        $isCorrect = ($question_score >= 0.999) ? 1 : 0;
+        $total_score += $question_score;
     }
 
-    if ($isCorrect) $correct++;
+    // 🧩 OTHER QUESTION TYPES
+    else {
+        $n_user = normalizeAnswer(implode(' ', $user_answers));
+        $match = 0;
+        foreach ($correct_answers as $ca) {
+            if ($n_user === $ca) {
+                $match = 1;
+                break;
+            }
+        }
+        $isCorrect = $match;
+        $total_score += $match;
+    }
 
-    // 📝 Insert answer details
+    // 📝 Save user's combined answer text
+    $combined_answer = implode(', ', $user_answers);
     $insert_sql = "
         INSERT INTO teipiexam.dbo.AnswerDetails (Answers_ID, Question_ID, User_Answer, IsCorrect)
         VALUES (?, ?, ?, ?)
     ";
-    $params = [$answers_id, $question_id, $user_answer, $isCorrect];
+    $params = [$answers_id, $question_id, $combined_answer, $isCorrect];
     $insert_stmt = sqlsrv_query($con3, $insert_sql, $params);
-
     if ($insert_stmt === false) {
-        echo "<pre style='color:red;'>Failed to insert AnswerDetails for Question_ID {$question_id}:\n" . print_r(sqlsrv_errors(), true) . "</pre>";
+        echo "<pre style='color:red;'>Failed to insert AnswerDetails for Question_ID $question_id:\n" . print_r(sqlsrv_errors(), true) . "</pre>";
     }
-
-    sqlsrv_free_stmt($q_stmt);
 }
 
-/* 🏁 Save final result summary */
+/* 🏁 Save results */
 $sql = "
     INSERT INTO teipiexam.dbo.Results (Emp_ID, Exam_ID, Score, TotalQuestions, Date_Completed)
     VALUES (?, ?, ?, ?, GETDATE())
 ";
-$params = [$emp_id, $exam_id, $correct, $total_questions];
+$params = [$emp_id, $exam_id, $total_score, $total_questions];
 $result_stmt = sqlsrv_query($con3, $sql, $params);
-
 if ($result_stmt === false) {
     die("<pre style='color:red;'>Error inserting into Results:\n" . print_r(sqlsrv_errors(), true) . "</pre>");
 }
 
-/* ✅ Redirect to results page */
-header("Location: result.php?exam_id=$exam_id&score=$correct&total=$total_questions");
+/* ✅ Redirect */
+header("Location: result.php?exam_id=$exam_id&score=$total_score&total=$total_questions");
 exit;
 ?>

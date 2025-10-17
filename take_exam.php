@@ -74,9 +74,10 @@ if ($exam_id <= 0) {
                         // Get correct answer
                         $sqlCorrect = "SELECT Correct_answer FROM teipiexam.dbo.Correct_Answers WHERE Question_ID = ?";
                         $stmtCorr = sqlsrv_query($con3, $sqlCorrect, [$qid]);
-                        $corr = sqlsrv_fetch_array($stmtCorr, SQLSRV_FETCH_ASSOC);
-                        if (!empty($corr['Correct_answer'])) {
-                            $choices[] = $corr['Correct_answer'];
+                        while ($corr = sqlsrv_fetch_array($stmtCorr, SQLSRV_FETCH_ASSOC)) {
+                            if (!empty($corr['Correct_answer'])) {
+                                $choices[] = $corr['Correct_answer'];
+                            }
                         }
 
                         shuffle($choices);
@@ -95,7 +96,19 @@ if ($exam_id <= 0) {
 
                     // Enumeration
                     elseif ($question_type === 'enumeration') {
-                        echo "<input type='text' class='form-control mt-2' name='answer[{$qid}]' placeholder='Type your answer here...' required>";
+                        // Get how many correct answers are defined for this question
+                        $sqlEnumCount = "SELECT COUNT(*) AS AnswerCount FROM teipiexam.dbo.Correct_Answers WHERE Question_ID = ?";
+                        $stmtEnum = sqlsrv_query($con3, $sqlEnumCount, [$qid]);
+                        $rowEnum = sqlsrv_fetch_array($stmtEnum, SQLSRV_FETCH_ASSOC);
+                        $count = intval($rowEnum['AnswerCount'] ?? 1);
+                        if ($count < 1) $count = 1;
+
+                        echo "<div class='mt-2'>";
+                        echo "<label class='form-label'>Provide {$count} answer(s):</label>";
+                        for ($i = 1; $i <= $count; $i++) {
+                            echo "<input type='text' class='form-control mb-2' name='answer[{$qid}][]' placeholder='Answer #{$i}' required>";
+                        }
+                        echo "</div>";
                     }
 
                     else {
