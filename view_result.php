@@ -23,14 +23,24 @@ function normalizeText($text) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Exam Results</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-light p-4">
+<body class="bg-slate-50 min-h-screen text-slate-800">
 
-<div class="container">
-    <div class="card shadow p-4">
-        <h2 class="mb-4 text-primary">📘 Exam Result Details</h2>
+<div class="flex">
+    <!-- Sidebar -->
+    <?php include "sidebar.php"; ?>
+
+    <!-- Main Content -->
+    <main class="flex-1">
+        <div class="max-w-6xl mx-auto px-6 py-8">
+            <div class="bg-white rounded-2xl shadow overflow-hidden">
+                <div class="px-6 py-4 border-b">
+                    <h2 class="text-2xl font-bold text-indigo-600">📘 Exam Result Details</h2>
+                </div>
+                <div class="px-8 py-8">
 
         <?php
         // 🧠 Fetch exam info
@@ -38,10 +48,10 @@ function normalizeText($text) {
         $exam_stmt = sqlsrv_query($con3, $exam_sql, [$exam_id]);
 
         if ($exam_stmt && ($exam = sqlsrv_fetch_array($exam_stmt, SQLSRV_FETCH_ASSOC))) {
-            echo "<h4>" . htmlspecialchars($exam['Exam_Title']) . "</h4>";
-            echo "<p class='text-muted'>" . htmlspecialchars($exam['Description']) . "</p>";
+            echo "<h4 class='text-lg font-semibold text-slate-800'>" . htmlspecialchars($exam['Exam_Title']) . "</h4>";
+            echo "<p class='text-sm text-slate-600 mt-2'>" . htmlspecialchars($exam['Description']) . "</p>";
         } else {
-            echo "<p class='text-danger'>Exam not found.</p>";
+            echo "<p class='text-red-600'>Exam not found.</p>";
         }
 
         // 🧠 Find attempt (date filter)
@@ -57,11 +67,11 @@ function normalizeText($text) {
         $attempt = sqlsrv_fetch_array($attempt_stmt, SQLSRV_FETCH_ASSOC);
 
         if (!$attempt) {
-            echo "<div class='text-muted'>No exact attempt found for this exam and time.</div>";
+            echo "<div class='text-slate-500 mt-4'>No exact attempt found for this exam and time.</div>";
         } else {
             $answers_id = $attempt['Answers_ID'];
             $date_taken_fmt = $attempt['Date_Taken']->format('Y-m-d H:i:s');
-            echo "<p><strong>Attempt Date:</strong> " . htmlspecialchars($date_taken_fmt) . "</p>";
+            echo "<p class='mt-4 text-sm'><strong>Attempt Date:</strong> " . htmlspecialchars($date_taken_fmt) . "</p>";
 
             // 🧠 Fetch questions and answers
             $sql = "
@@ -82,21 +92,22 @@ function normalizeText($text) {
             $stmt = sqlsrv_query($con3, $sql, [$answers_id]);
 
             if ($stmt === false) {
-                echo "<div class='text-danger'>Error loading results:<br><pre>" . print_r(sqlsrv_errors(), true) . "</pre></div>";
+                echo "<div class='bg-red-50 border border-red-200 rounded p-4 text-red-700 mt-4'>Error loading results:<br><pre>" . print_r(sqlsrv_errors(), true) . "</pre></div>";
             } else {
-                echo "<table class='table table-bordered mt-3 align-middle'>";
-                echo "<thead class='table-dark'>
-                        <tr>
-                            <th>#</th>
-                            <th>Question</th>
-                            <th>Type</th>
-                            <th>Your Answer</th>
-                            <th>Correct Answer(s)</th>
-                            <th>Score</th>
-                            <th>Image</th>
-                        </tr>
-                      </thead>
-                      <tbody>";
+                echo "<div class='mt-6 overflow-x-auto'>
+                        <table class='min-w-full divide-y divide-slate-200'>
+                        <thead class='bg-slate-50'>
+                            <tr>
+                                <th class='px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider'>#</th>
+                                <th class='px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider'>Question</th>
+                                <th class='px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider'>Type</th>
+                                <th class='px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider'>Your Answer</th>
+                                <th class='px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider'>Correct Answer(s)</th>
+                                <th class='px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider'>Score</th>
+                                <th class='px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider'>Image</th>
+                            </tr>
+                        </thead>
+                        <tbody class='bg-white divide-y divide-slate-100'>";
 
                 $i = 1;
                 $hasRows = false;
@@ -142,7 +153,7 @@ function normalizeText($text) {
 
                         $total = count($correct_items);
                         $isCorrect = ($matched === $total);
-                        $resultText = "<span class='".($isCorrect ? "text-success" : "text-danger")." fw-bold'>{$matched} / {$total} correct</span>";
+                        $resultText = "<span class='".($isCorrect ? "text-emerald-600 font-bold" : "text-red-600 font-bold")."'>{$matched} / {$total} correct</span>";
 
                         $userAnsDisplay = htmlspecialchars($userAns);
                         $correctAnsDisplay = htmlspecialchars(implode(", ", $corrects));
@@ -151,24 +162,24 @@ function normalizeText($text) {
                         $userNorm = normalizeText($userAns);
                         $correctNorms = array_map('normalizeText', $corrects);
                         $isCorrect = in_array($userNorm, $correctNorms);
-                        $resultText = $isCorrect ? "<span class='text-success fw-bold'>Correct</span>" : "<span class='text-danger fw-bold'>Wrong</span>";
+                        $resultText = $isCorrect ? "<span class='text-emerald-600 font-bold'>Correct</span>" : "<span class='text-red-600 font-bold'>Wrong</span>";
 
                         $userAnsDisplay = htmlspecialchars($userAns);
                         $correctAnsDisplay = htmlspecialchars(implode(", ", $corrects));
                     }
 
-                    echo "<tr>
-                            <td>{$i}</td>
-                            <td>{$question}</td>
-                            <td>{$type}</td>
-                            <td>{$userAnsDisplay}</td>
-                            <td class='text-primary fw-semibold'>{$correctAnsDisplay}</td>
-                            <td>{$resultText}</td>
-                            <td>";
+                    echo "<tr class='hover:bg-slate-50'>
+                            <td class='px-6 py-4 text-sm font-medium text-slate-800'>{$i}</td>
+                            <td class='px-6 py-4 text-sm text-slate-700'>{$question}</td>
+                            <td class='px-6 py-4 text-sm text-slate-600'>{$type}</td>
+                            <td class='px-6 py-4 text-sm text-slate-700'>{$userAnsDisplay}</td>
+                            <td class='px-6 py-4 text-sm font-semibold text-indigo-600'>{$correctAnsDisplay}</td>
+                            <td class='px-6 py-4 text-sm'>{$resultText}</td>
+                            <td class='px-6 py-4 text-sm'>";
                     if ($image) {
-                        echo "<img src='uploads/" . htmlspecialchars($image) . "' alt='Question Image' style='max-width:100px; border-radius:6px;'>";
+                        echo "<img src='uploads/" . htmlspecialchars($image) . "' alt='Question Image' class='max-w-[100px] rounded'>";
                     } else {
-                        echo "<span class='text-muted'>No image</span>";
+                        echo "<span class='text-slate-500'>No image</span>";
                     }
                     echo "</td></tr>";
 
@@ -176,10 +187,10 @@ function normalizeText($text) {
                 }
 
                 if (!$hasRows) {
-                    echo "<tr><td colspan='7' class='text-center text-muted'>No answers found for this attempt.</td></tr>";
+                    echo "<tr><td colspan='7' class='px-6 py-4 text-center text-slate-500'>No answers found for this attempt.</td></tr>";
                 }
 
-                echo "</tbody></table>";
+                echo "</tbody></table></div>";
                 sqlsrv_free_stmt($stmt);
             }
         }
@@ -187,10 +198,13 @@ function normalizeText($text) {
         if ($exam_stmt) sqlsrv_free_stmt($exam_stmt);
         ?>
 
-        <div class="mt-3">
-            <a href="exam_taken.php" class="btn btn-secondary">← Back to Exams Taken</a>
+                    <div class="mt-6 text-center">
+                        <a href="exam_taken.php" class="inline-flex items-center px-6 py-2 text-sm font-medium text-white bg-slate-600 rounded-lg hover:bg-slate-700 transition">← Back to Exams Taken</a>
+                    </div>
+                </div>
+            </div>
         </div>
-    </div>
+    </main>
 </div>
 
 </body>

@@ -57,39 +57,55 @@ $passed = $percentage >= 75;
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Exam Result - <?= $examTitle ?></title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body style="margin:0; display:flex; background-color:#f4f6f9; font-family:Arial,sans-serif;">
+<body class="bg-slate-50 min-h-screen text-slate-800">
 
-    <!-- Sidebar -->
-    <?php include "sidebar.php"; ?>
+    <div class="flex">
+        <!-- Sidebar -->
+        <?php include "sidebar.php"; ?>
 
-    <!-- Main Content -->
-    <div style="flex:1; padding:40px;">
-        <div class="card shadow p-4" style="max-width:600px; margin:auto;">
-            <h3 class="mb-3 text-center text-success">🧾 Exam Result</h3>
+        <!-- Main Content -->
+        <main class="flex-1">
+            <div class="max-w-2xl mx-auto px-6 py-8">
+                <div class="bg-white rounded-2xl shadow overflow-hidden">
+                    <div class="px-6 py-4 border-b">
+                        <h3 class="text-2xl font-bold text-emerald-600">🧾 Exam Result</h3>
+                    </div>
+                    <div class="px-8 py-8">
+                        <h4 class="text-xl font-semibold text-center text-slate-800 mb-6"><?= $examTitle ?></h4>
 
-            <h4 class="text-center mb-4"><?= $examTitle ?></h4>
+                        <div class="space-y-4 mb-8">
+                            <div class="text-center py-4 bg-slate-50 rounded-lg">
+                                <p class="text-sm text-slate-600 mb-1">Score</p>
+                                <p class="text-3xl font-bold text-indigo-600"><?= "{$score} / {$total}" ?></p>
+                            </div>
+                            <div class="text-center py-4 bg-slate-50 rounded-lg">
+                                <p class="text-sm text-slate-600 mb-1">Percentage</p>
+                                <p class="text-3xl font-bold text-indigo-600"><?= "{$percentage}%" ?></p>
+                            </div>
+                            <p class="text-center text-sm text-slate-500"><strong>Date Taken:</strong> <?= $dateTaken ?></p>
+                        </div>
 
-            <p class="fs-5 text-center"><strong>Score:</strong> <?= "{$score} / {$total}" ?></p>
-            <p class="fs-5 text-center"><strong>Percentage:</strong> <?= "{$percentage}%" ?></p>
-            <p class="fs-6 text-center text-muted"><strong>Date Taken:</strong> <?= $dateTaken ?></p>
+                        <?php if ($passed): ?>
+                            <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-center mb-6">
+                                <p class="text-emerald-800 font-medium">🎉 Congratulations! You passed the exam.</p>
+                            </div>
+                        <?php else: ?>
+                            <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center mb-6">
+                                <p class="text-red-800 font-medium">💪 Don't give up! You can try again and improve next time.</p>
+                            </div>
+                        <?php endif; ?>
 
-            <?php if ($passed): ?>
-                <div class="alert alert-success text-center">
-                    🎉 Congratulations! You passed the exam.
+                        <div class="text-center">
+                            <a href="exam_list.php" class="inline-flex items-center px-6 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition">⬅ Back to Exams</a>
+                        </div>
+                    </div>
                 </div>
-            <?php else: ?>
-                <div class="alert alert-danger text-center">
-                    💪 Don’t give up! You can try again and improve next time.
-                </div>
-            <?php endif; ?>
-
-            <div class="text-center mt-4">
-                <a href="exams_taken.php" class="btn btn-primary px-4">⬅ Back to Exams</a>
             </div>
-        </div>
+        </main>
     </div>
 
 </body>

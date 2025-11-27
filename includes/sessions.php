@@ -2,7 +2,7 @@
 // Check if user cookies are set
 if (!isset($_COOKIE['EIMS_emp_Id']) || !isset($_COOKIE['EIMS_usr_Id'])) {
     // If cookies are missing, redirect to login
-    header("Location: login.php");
+    header("Location: ../login.php");
     exit();
 }
 

@@ -13,61 +13,40 @@ if (empty($emp_id)) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Exams Taken</title>
-
-    <!-- Bootstrap 5 -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-
-    <!-- DataTables CSS (Bootstrap 5 integration) -->
-    <link href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
-
-    <style>
-        body {
-            margin: 0;
-            display: flex;
-            background-color: #f4f6f9;
-            font-family: Arial, sans-serif;
-        }
-        .card {
-            border-radius: 15px;
-        }
-        .dataTables_wrapper .dataTables_paginate .paginate_button {
-            padding: 0.3em 0.8em;
-        }
-        .dataTables_filter input {
-            border-radius: 8px;
-            padding: 6px 10px;
-            border: 1px solid #ccc;
-        }
-        .dataTables_length select {
-            border-radius: 8px;
-        }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Exam Results</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
+<body class="bg-slate-50 min-h-screen text-slate-800">
 
-    <!-- Sidebar -->
-    <?php include "sidebar.php"; ?>
+    <div class="flex">
+        <!-- Sidebar -->
+        <?php include "sidebar.php"; ?>
 
-    <!-- Main Content -->
-    <div style="flex:1; padding:40px;">
-        <div class="card shadow p-4">
-            <h2 class="mb-4 text-primary fw-bold">
-                🧾 Exams You've Taken
-            </h2>
+        <!-- Main Content -->
+        <main class="flex-1">
+            <div class="max-w-6xl mx-auto px-6 py-8">
+                <header class="mb-8">
+                    <h1 class="text-3xl font-bold text-slate-800">🧾 My Exam Results</h1>
+                    <p class="text-sm text-slate-500 mt-1">Review your completed exams and scores</p>
+                </header>
 
-            <div class="table-responsive">
-                <table id="examTable" class="table table-hover align-middle table-bordered">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>Exam Title</th>
-                            <th>Score</th>
-                            <th>Date Taken</th>
-                            <th>Status</th>
-                            <th style="width:160px;">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                <section class="bg-white rounded-2xl shadow overflow-hidden">
+                    <div class="px-6 py-4 border-b">
+                        <h2 class="text-lg font-semibold text-slate-800">Exams You've Taken</h2>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-slate-200">
+                            <thead class="bg-slate-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Exam Title</th>
+                                    <th class="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Score</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Date Taken</th>
+                                    <th class="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-slate-100">
                         <?php
                         $sql = "
                             SELECT 
@@ -86,7 +65,7 @@ if (empty($emp_id)) {
                         $stmt = sqlsrv_query($con3, $sql, [$emp_id]);
 
                         if ($stmt === false) {
-                            echo "<tr><td colspan='5' class='text-danger text-center'>Error loading exam results.</td></tr>";
+                            echo "<tr><td colspan='5' class='px-6 py-4 text-center text-red-600'>Error loading exam results.</td></tr>";
                         } else {
                             $hasRows = false;
 
@@ -101,7 +80,8 @@ if (empty($emp_id)) {
 
                                 $percentage = $total > 0 ? ($score / $total) * 100 : 0;
                                 $status = $percentage >= 75 ? "Passed" : "Failed";
-                                $statusColor = $status === "Passed" ? "success" : "danger";
+                                $statusBgColor = $status === "Passed" ? "emerald-100" : "red-100";
+                                $statusTextColor = $status === "Passed" ? "emerald-700" : "red-700";
 
                                 $viewUrl = "view_result.php?" . http_build_query([
                                     'exam_id'    => $row['Exam_ID'],
@@ -112,13 +92,15 @@ if (empty($emp_id)) {
                                 ]);
 
                                 echo "
-                                <tr>
-                                    <td>{$examTitle}</td>
-                                    <td>{$score} / {$total}</td>
-                                    <td>{$dateTaken}</td>
-                                    <td><span class='badge bg-{$statusColor}'>{$status}</span></td>
-                                    <td>
-                                        <a href='{$viewUrl}' class='btn btn-sm btn-primary'>
+                                <tr class='hover:bg-slate-50 transition'>
+                                    <td class='px-6 py-4 text-sm font-medium text-slate-800'>{$examTitle}</td>
+                                    <td class='px-6 py-4 text-sm text-slate-600 text-center'><span class='font-semibold'>{$score}</span> / {$total}</td>
+                                    <td class='px-6 py-4 text-sm text-slate-600'>{$dateTaken}</td>
+                                    <td class='px-6 py-4 text-center'>
+                                        <span class='inline-block px-3 py-1 text-xs font-medium rounded-full bg-{$statusBgColor} text-{$statusTextColor}'>{$status}</span>
+                                    </td>
+                                    <td class='px-6 py-4 text-center'>
+                                        <a href='{$viewUrl}' class='inline-flex items-center px-3 py-2 text-xs font-medium text-indigo-700 bg-indigo-100 rounded hover:bg-indigo-200 transition'>
                                             View Result
                                         </a>
                                     </td>
@@ -126,7 +108,7 @@ if (empty($emp_id)) {
                             }
 
                             if (!$hasRows) {
-                                echo "<tr><td colspan='5' class='text-center text-muted'>You haven’t taken any exams yet.</td></tr>";
+                                echo "<tr><td colspan='5' class='px-6 py-4 text-center text-slate-500'>You haven't taken any exams yet.</td></tr>";
                             }
 
                             sqlsrv_free_stmt($stmt);
@@ -135,29 +117,10 @@ if (empty($emp_id)) {
                     </tbody>
                 </table>
             </div>
-        </div>
+        </section>
+            </div>
+        </main>
     </div>
-
-    <!-- jQuery + DataTables + Bootstrap 5 JS -->
-    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
-
-    <script>
-        $(document).ready(function() {
-            $('#examTable').DataTable({
-                pageLength: 10,
-                order: [[2, 'desc']],
-                language: {
-                    search: "🔍 Search:",
-                    lengthMenu: "Show _MENU_ exams per page",
-                    info: "Showing _START_ to _END_ of _TOTAL_ exams",
-                    infoEmpty: "No exams found",
-                    zeroRecords: "No matching exams found"
-                }
-            });
-        });
-    </script>
 
 </body>
 </html>

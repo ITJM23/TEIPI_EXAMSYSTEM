@@ -3,7 +3,7 @@ include "../includes/sessions.php";
 include "../includes/db.php";
 
 // Create uploads folder if not existing
-$uploadDir = "uploads/";
+$uploadDir = "/../uploads/";
 if (!file_exists($uploadDir)) {
     mkdir($uploadDir, 0777, true);
 }
