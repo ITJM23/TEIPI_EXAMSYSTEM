@@ -20,6 +20,7 @@ include "../includes/db.php";
             <th>Exam ID</th>
             <th>Title</th>
             <th>Description</th>
+            <th>Linked Patches</th>
             <th>Actions</th>
         </tr>
     </thead>
@@ -29,10 +30,23 @@ include "../includes/db.php";
         $stmt = sqlsrv_query($con3, $sql);
 
         while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+            // fetch linked patch names
+            $patchNames = [];
+            $mstmt = sqlsrv_query($con3, "IF OBJECT_ID('dbo.Exam_Patches','U') IS NULL SELECT 0 as cnt ELSE SELECT p.Patch_Name FROM dbo.Exam_Patches ep JOIN dbo.Patches p ON ep.Patch_ID = p.Patch_ID WHERE ep.Exam_ID = ?", [$row['Exam_ID']]);
+            if ($mstmt) {
+                while ($mpr = sqlsrv_fetch_array($mstmt, SQLSRV_FETCH_ASSOC)) {
+                    if (isset($mpr['Patch_Name'])) $patchNames[] = $mpr['Patch_Name'];
+                }
+                sqlsrv_free_stmt($mstmt);
+            }
+
+            $patchDisplay = empty($patchNames) ? 'None' : htmlspecialchars(implode(', ', $patchNames));
+
             echo "<tr>
                     <td>{$row['Exam_ID']}</td>
                     <td>{$row['Exam_Title']}</td>
                     <td>{$row['Description']}</td>
+                    <td>{$patchDisplay}</td>
                     <td>
                         <a href='add_exam.php?edit={$row['Exam_ID']}' class='btn btn-warning btn-sm'>Edit</a>
                         <a href='delete.php?type=exam&id={$row['Exam_ID']}' class='btn btn-danger btn-sm' onclick='return confirm(\"Delete this exam?\")'>Delete</a>

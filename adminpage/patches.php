@@ -82,8 +82,7 @@ if ($stmt_patches) {
     sqlsrv_free_stmt($stmt_patches);
 }
 
-// Fetch all exams
-$sql_exams = "SELECT Exam_ID, Exam_Name FROM dbo.Exams ORDER BY Exam_Name";
+$sql_exams = "SELECT Exam_ID, Exam_Title FROM dbo.Exams ORDER BY Exam_Title";
 $stmt_exams = sqlsrv_query($con3, $sql_exams);
 $exams = [];
 
@@ -179,7 +178,7 @@ if ($stmt_exams) {
                         <select name="exam_id" required class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
                             <option value="">-- Select Exam --</option>
                             <?php foreach ($exams as $exam): ?>
-                                <option value="<?php echo $exam['Exam_ID']; ?>"><?php echo htmlspecialchars($exam['Exam_Name']); ?></option>
+                                <option value="<?php echo $exam['Exam_ID']; ?>"><?php echo htmlspecialchars($exam['Exam_Title']); ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>

@@ -64,7 +64,7 @@ $inactive_class = 'text-slate-200 hover:bg-slate-700 hover:text-white';
         <span>My Results</span>
       </a>
 
-      <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors <?php echo $current_page === 'tobeannouned.php' ? $active_class : $inactive_class; ?>">
+      <a href="patches.php" class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors <?php echo $current_page === 'patches.php' ? $active_class : $inactive_class; ?>">
         <!-- Wrench / Tools icon for Patches -->
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.7 9.3a6 6 0 11-8.4 8.4L3 21l3.3-3.3a6 6 0 0111.4-8.4z" />
@@ -73,7 +73,7 @@ $inactive_class = 'text-slate-200 hover:bg-slate-700 hover:text-white';
         <span>Patches</span>
       </a>
 
-      <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors <?php echo $current_page === 'tobeannouned.php' ? $active_class : $inactive_class; ?>">
+      <a href="certificates.php" class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors <?php echo $current_page === 'certificates.php' ? $active_class : $inactive_class; ?>">
         <!-- Certificate / Badge icon -->
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4" />
@@ -132,7 +132,7 @@ $inactive_class = 'text-slate-200 hover:bg-slate-700 hover:text-white';
           <span>My Results</span>
         </a>
 
-        <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors <?php echo $current_page === 'tobeannouned.php' ? $active_class : $inactive_class; ?>">
+        <a href="patches.php" class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors <?php echo $current_page === 'patches.php' ? $active_class : $inactive_class; ?>">
           <!-- Wrench / Tools icon for Patches (mobile) -->
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.7 9.3a6 6 0 11-8.4 8.4L3 21l3.3-3.3a6 6 0 0111.4-8.4z" />
@@ -141,7 +141,7 @@ $inactive_class = 'text-slate-200 hover:bg-slate-700 hover:text-white';
           <span>Patches</span>
         </a>
 
-        <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors <?php echo $current_page === 'tobeannouned.php' ? $active_class : $inactive_class; ?>">
+        <a href="certificates.php" class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors <?php echo $current_page === 'certificates.php' ? $active_class : $inactive_class; ?>">
           <!-- Certificate / Badge icon (mobile) -->
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4" />

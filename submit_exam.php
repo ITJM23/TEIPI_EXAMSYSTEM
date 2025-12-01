@@ -163,6 +163,38 @@ if ($result_id <= 0) {
     die("<div style='color:red;'>Failed to retrieve inserted Result_ID.</div>");
 }
 
+/* 🎁 Grant patches if exam passed (>=75%) */
+$passing_percentage = ($total_questions > 0) ? ($total_score / $total_questions) * 100 : 0;
+if ($passing_percentage >= 75) {
+    // Ensure Employee_Patches table exists
+    $create_table = "IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.Employee_Patches') AND type in (N'U')) 
+        CREATE TABLE dbo.Employee_Patches (
+            Emp_ID NVARCHAR(MAX) NOT NULL,
+            Patch_ID INT NOT NULL,
+            Date_Earned DATETIME DEFAULT GETDATE(),
+            PRIMARY KEY (Emp_ID, Patch_ID)
+        )";
+    @sqlsrv_query($con3, $create_table);
+    
+    // Get patches linked to this exam
+    $patch_sql = "SELECT Patch_ID FROM dbo.Exam_Patches WHERE Exam_ID = ?";
+    $patch_stmt = sqlsrv_query($con3, $patch_sql, [$exam_id]);
+    
+    if ($patch_stmt) {
+        while ($patch_row = sqlsrv_fetch_array($patch_stmt, SQLSRV_FETCH_ASSOC)) {
+            $patch_id = $patch_row['Patch_ID'];
+            
+            // Insert into Employee_Patches (ignore if already exists due to PRIMARY KEY)
+            $grant_sql = "
+                INSERT INTO dbo.Employee_Patches (Emp_ID, Patch_ID, Date_Earned)
+                VALUES (?, ?, GETDATE())
+            ";
+            @sqlsrv_query($con3, $grant_sql, [$emp_id, $patch_id]);
+        }
+        sqlsrv_free_stmt($patch_stmt);
+    }
+}
+
 /* ✅ Redirect properly */
 header("Location: result.php?result_id=$result_id&exam_id=$exam_id");
 exit;
