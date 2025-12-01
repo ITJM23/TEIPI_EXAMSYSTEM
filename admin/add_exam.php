@@ -39,6 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $desc = trim($_POST['Description'] ?? '');
     $selected_patches = $_POST['patches'] ?? [];
     $new_patches_raw = trim($_POST['new_patches'] ?? '');
+    $access_password = trim($_POST['access_password'] ?? '');
 
     if ($edit_id) {
         $sql = "UPDATE Exams SET Exam_Title = ?, Description = ? WHERE Exam_ID = ?";
@@ -71,6 +72,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // ensure mapping table exists
     $create_map = "IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.Exam_Patches') AND type in (N'U')) CREATE TABLE dbo.Exam_Patches (Exam_ID INT NOT NULL, Patch_ID INT NOT NULL)";
     @sqlsrv_query($con3, $create_map);
+
+    // ensure Exam_Access table exists
+    $create_access = "IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.Exam_Access') AND type in (N'U')) CREATE TABLE dbo.Exam_Access (Access_ID INT IDENTITY(1,1) PRIMARY KEY, Exam_ID INT NOT NULL, Access_PasswordHash VARBINARY(255) NOT NULL, Date_Created DATETIME DEFAULT GETDATE(), Created_By VARCHAR(100))";
+    @sqlsrv_query($con3, $create_access);
 
     // process new patches (comma-separated)
     if (!empty($new_patches_raw)) {
@@ -119,6 +124,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 if ($pid > 0) sqlsrv_query($con3, $ins, [$exam_id, $pid]);
             }
         }
+        // handle access password: if provided, insert or update Exam_Access; if empty, remove any existing access
+        if ($access_password !== '') {
+            $hash = password_hash($access_password, PASSWORD_DEFAULT);
+            // delete any existing row and insert new (simple approach)
+            $delAcc = "IF OBJECT_ID('dbo.Exam_Access','U') IS NOT NULL DELETE FROM dbo.Exam_Access WHERE Exam_ID = ?";
+            sqlsrv_query($con3, $delAcc, [$exam_id]);
+            $insAcc = "INSERT INTO dbo.Exam_Access (Exam_ID, Access_PasswordHash, Created_By) VALUES (?, CONVERT(VARBINARY(255), ?), ?)";
+            sqlsrv_query($con3, $insAcc, [$exam_id, $hash, ($username ?? '')]);
+        } else {
+            // if blank password provided, remove existing access entry
+            $delAcc2 = "IF OBJECT_ID('dbo.Exam_Access','U') IS NOT NULL DELETE FROM dbo.Exam_Access WHERE Exam_ID = ?";
+            sqlsrv_query($con3, $delAcc2, [$exam_id]);
+        }
     }
 
     header("Location: exams.php");
@@ -145,6 +163,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <label class="form-label">Description</label>
         <textarea name="Description" class="form-control"><?php echo htmlspecialchars($desc); ?></textarea>
     </div>
+        <div class="mb-3">
+            <label class="form-label">Exam Access Password (optional)</label>
+            <input type="password" name="access_password" class="form-control" placeholder="Set an access password to lock the exam">
+            <small class="form-text text-muted">Leave empty to keep the exam public.</small>
+        </div>
     <div class="mb-3">
         <label class="form-label">Linked Patches (optional)</label>
         <select name="patches[]" multiple class="form-control" size="5">

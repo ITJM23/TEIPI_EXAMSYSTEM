@@ -28,10 +28,20 @@ if ($stmt && ($exam = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC))) {
     exit;
 }
 
+// Check if this exam currently has access protection
+$has_access = false;
+$accStmt = @sqlsrv_query($con3, "SELECT Access_PasswordHash FROM dbo.Exam_Access WHERE Exam_ID = ?", [$exam_id]);
+if ($accStmt) {
+    $accRow = sqlsrv_fetch_array($accStmt, SQLSRV_FETCH_ASSOC);
+    if ($accRow && isset($accRow['Access_PasswordHash'])) $has_access = true;
+    sqlsrv_free_stmt($accStmt);
+}
+
 // ---------- Handle Update ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $title = trim($_POST['exam_title'] ?? '');
     $desc  = trim($_POST['exam_description'] ?? '');
+    $access_password = trim($_POST['access_password'] ?? '');
     
     if ($title === '') {
         $errors[] = 'Exam title is required.';
@@ -46,6 +56,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $exam['Description'] = $desc;
             sqlsrv_free_stmt($stmt);
         }
+    }
+
+    // Handle access password if provided (create/replace or remove)
+    // ensure Exam_Access table exists
+    $create_access = "IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.Exam_Access') AND type in (N'U')) CREATE TABLE dbo.Exam_Access (Access_ID INT IDENTITY(1,1) PRIMARY KEY, Exam_ID INT NOT NULL, Access_PasswordHash VARBINARY(255) NOT NULL, Date_Created DATETIME DEFAULT GETDATE(), Created_By VARCHAR(100))";
+    @sqlsrv_query($con3, $create_access);
+
+    if ($access_password !== '') {
+        $hash = password_hash($access_password, PASSWORD_DEFAULT);
+        $delAcc = "IF OBJECT_ID('dbo.Exam_Access','U') IS NOT NULL DELETE FROM dbo.Exam_Access WHERE Exam_ID = ?";
+        sqlsrv_query($con3, $delAcc, [$exam_id]);
+        $insAcc = "INSERT INTO dbo.Exam_Access (Exam_ID, Access_PasswordHash, Created_By) VALUES (?, CONVERT(VARBINARY(255), ?), ?)";
+        sqlsrv_query($con3, $insAcc, [$exam_id, $hash, ($username ?? '')]);
+        $messages[] = 'Exam access password updated.';
+        $has_access = true;
+    } else {
+        // remove access if exists
+        $delAcc2 = "IF OBJECT_ID('dbo.Exam_Access','U') IS NOT NULL DELETE FROM dbo.Exam_Access WHERE Exam_ID = ?";
+        sqlsrv_query($con3, $delAcc2, [$exam_id]);
+        $messages[] = 'Exam access removed (public).';
+        $has_access = false;
     }
 }
 
@@ -95,6 +126,11 @@ if ($q_stmt) {
 <div class="mb-3">
 <label class="form-label">Description</label>
 <textarea class="form-control" name="exam_description" rows="4"><?php echo htmlspecialchars($exam['Description']); ?></textarea>
+</div>
+<div class="mb-3">
+<label class="form-label">Exam Access Password (optional)</label>
+<input type="password" name="access_password" class="form-control" placeholder="Set an access password to lock the exam">
+<small class="form-text text-muted">Leave empty to keep the exam public. Current: <?php echo $has_access ? '<span class="badge bg-danger">Locked</span>' : '<span class="badge bg-success">Public</span>'; ?></small>
 </div>
 <div class="d-flex justify-content-between">
 <a href="adminindex.php" class="btn btn-secondary">Cancel</a>

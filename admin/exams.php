@@ -21,6 +21,7 @@ include "../includes/db.php";
             <th>Title</th>
             <th>Description</th>
             <th>Linked Patches</th>
+            <th>Locked</th>
             <th>Actions</th>
         </tr>
     </thead>
@@ -42,14 +43,26 @@ include "../includes/db.php";
 
             $patchDisplay = empty($patchNames) ? 'None' : htmlspecialchars(implode(', ', $patchNames));
 
+            // check if exam locked
+            $lockStmt = sqlsrv_query($con3, "IF OBJECT_ID('dbo.Exam_Access','U') IS NULL SELECT 0 as cnt ELSE SELECT COUNT(*) as cnt FROM dbo.Exam_Access WHERE Exam_ID = ?", [$row['Exam_ID']]);
+            $locked = false;
+            if ($lockStmt) {
+                $lr = sqlsrv_fetch_array($lockStmt, SQLSRV_FETCH_ASSOC);
+                $locked = ((int)($lr['cnt'] ?? 0)) > 0;
+                sqlsrv_free_stmt($lockStmt);
+            }
+
+            $lockedText = $locked ? 'Yes' : 'No';
+
             echo "<tr>
                     <td>{$row['Exam_ID']}</td>
                     <td>{$row['Exam_Title']}</td>
                     <td>{$row['Description']}</td>
                     <td>{$patchDisplay}</td>
+                    <td>{$lockedText}</td>
                     <td>
                         <a href='add_exam.php?edit={$row['Exam_ID']}' class='btn btn-warning btn-sm'>Edit</a>
-                        <a href='delete.php?type=exam&id={$row['Exam_ID']}' class='btn btn-danger btn-sm' onclick='return confirm(\"Delete this exam?\")'>Delete</a>
+                        <a href='delete.php?type=exam&id={$row['Exam_ID']}' class='btn btn-danger btn-sm' onclick='return confirm("Delete this exam?")'>Delete</a>
                     </td>
                 </tr>";
         }

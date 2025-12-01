@@ -64,6 +64,22 @@ include "includes/db.php";
                     if ($stmt3 && ($row = sqlsrv_fetch_array($stmt3, SQLSRV_FETCH_ASSOC))) {
                             $avg_score = $row['avg_score'] ? round($row['avg_score'], 2) : 0;
                     }
+
+                    // earned patches and certificates counts for this employee
+                    $earned_patches = 0;
+                    $earned_certs = 0;
+                    $stmt_p = @sqlsrv_query($con3, "IF OBJECT_ID('dbo.Employee_Patches','U') IS NULL SELECT 0 as cnt ELSE SELECT COUNT(*) as cnt FROM dbo.Employee_Patches WHERE Emp_ID = ?", [$emp_id]);
+                    if ($stmt_p) {
+                        $r = sqlsrv_fetch_array($stmt_p, SQLSRV_FETCH_ASSOC);
+                        $earned_patches = (int)($r['cnt'] ?? 0);
+                        sqlsrv_free_stmt($stmt_p);
+                    }
+                    $stmt_c = @sqlsrv_query($con3, "IF OBJECT_ID('dbo.Employee_Certificates','U') IS NULL SELECT 0 as cnt ELSE SELECT COUNT(*) as cnt FROM dbo.Employee_Certificates WHERE Emp_ID = ?", [$emp_id]);
+                    if ($stmt_c) {
+                        $r = sqlsrv_fetch_array($stmt_c, SQLSRV_FETCH_ASSOC);
+                        $earned_certs = (int)($r['cnt'] ?? 0);
+                        sqlsrv_free_stmt($stmt_c);
+                    }
                     ?>
 
                     <div class="bg-white rounded-2xl p-6 shadow">
@@ -111,6 +127,28 @@ include "includes/db.php";
                             <div class="p-3 bg-purple-50 rounded-xl">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-purple-600" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a6 6 0 100 12A6 6 0 0010 2z"/></svg>
                             </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Quick Links: Patches & Certificates -->
+                <section class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
+                    <div class="bg-white rounded-2xl p-6 shadow flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-slate-500">Earned Patches</p>
+                            <p class="mt-1 text-2xl font-bold text-slate-800"><?php echo $earned_patches; ?></p>
+                        </div>
+                        <div class="text-right">
+                            <a href="patches.php" class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-semibold">View Patches</a>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-2xl p-6 shadow flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-slate-500">Earned Certificates</p>
+                            <p class="mt-1 text-2xl font-bold text-slate-800"><?php echo $earned_certs; ?></p>
+                        </div>
+                        <div class="text-right">
+                            <a href="certificates.php" class="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold">View Certificates</a>
                         </div>
                     </div>
                 </section>

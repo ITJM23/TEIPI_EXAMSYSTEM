@@ -8,18 +8,79 @@ if ($exam_id <= 0) {
         die("<div class='p-6 text-red-700'>Invalid or missing Exam ID.</div>");
 }
 
-// Fetch all questions first
-$sql = "SELECT * FROM teipiexam.dbo.Questions WHERE Exam_ID = ?";
-$params = [$exam_id];
-$stmt = sqlsrv_query($con3, $sql, $params);
-
-$questions = [];
-if ($stmt !== false) {
-        while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
-                $questions[] = $row;
-        }
-        sqlsrv_free_stmt($stmt);
+// Check if exam is password-protected
+$accessStmt = sqlsrv_query($con3, "IF OBJECT_ID('dbo.Exam_Access','U') IS NULL SELECT 0 as has ELSE SELECT Access_PasswordHash FROM dbo.Exam_Access WHERE Exam_ID = ?", [$exam_id]);
+$accessHash = null;
+if ($accessStmt) {
+    while ($ar = sqlsrv_fetch_array($accessStmt, SQLSRV_FETCH_ASSOC)) {
+        if (isset($ar['Access_PasswordHash'])) { $accessHash = $ar['Access_PasswordHash']; break; }
+    }
+    sqlsrv_free_stmt($accessStmt);
 }
+
+// If protected and no access cookie set, require password
+if (!empty($accessHash)) {
+    $cookieName = 'exam_access_' . $exam_id;
+    // handle password submission
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['exam_password'])) {
+        $provided = $_POST['exam_password'];
+        // convert binary hash to string if needed
+        $stored = is_resource($accessHash) ? stream_get_contents($accessHash) : $accessHash;
+        if (password_verify($provided, (string)$stored)) {
+            setcookie($cookieName, '1', time()+3600, '/');
+            // redirect to GET to avoid repost
+            header("Location: take_exam.php?exam_id=" . $exam_id);
+            exit;
+        } else {
+            $pw_error = 'Incorrect password.';
+        }
+    }
+
+    // If cookie not present, show password form
+    if (empty($_COOKIE[$cookieName])) {
+        ?>
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>Exam Access Required</title>
+            <script src="https://cdn.tailwindcss.com"></script>
+        </head>
+        <body class="bg-slate-50 min-h-screen flex items-center justify-center">
+            <div class="bg-white p-8 rounded-lg shadow w-full max-w-md">
+                <h2 class="text-lg font-semibold mb-4">This exam is protected</h2>
+                <?php if (!empty($pw_error)): ?><div class="mb-3 text-red-600"><?php echo htmlspecialchars($pw_error); ?></div><?php endif; ?>
+                <form method="POST">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Exam Password</label>
+                        <input type="password" name="exam_password" class="w-full px-3 py-2 border rounded" required>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <a href="exam_list.php" class="text-sm text-slate-500">← Back to list</a>
+                        <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded">Enter</button>
+                    </div>
+                </form>
+            </div>
+        </body>
+        </html>
+        <?php
+        exit;
+    }
+}
+
+// Fetch all questions first
+ $sql = "SELECT * FROM teipiexam.dbo.Questions WHERE Exam_ID = ?";
+ $params = [$exam_id];
+ $stmt = sqlsrv_query($con3, $sql, $params);
+
+ $questions = [];
+ if ($stmt !== false) {
+         while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+                 $questions[] = $row;
+         }
+         sqlsrv_free_stmt($stmt);
+ }
 
 ?>
 
