@@ -55,9 +55,11 @@ if (empty($emp_id)) {
                                 r.TotalQuestions,
                                 r.Date_Completed,
                                 r.Exam_ID,
-                                r.Result_ID
+                                r.Result_ID,
+                                ISNULL(es.PassingRate, 75) AS PassingRate
                             FROM dbo.Results AS r
                             INNER JOIN dbo.Exams AS e ON e.Exam_ID = r.Exam_ID
+                            LEFT JOIN dbo.Exam_Settings es ON r.Exam_ID = es.Exam_ID
                             WHERE r.Emp_ID = ?
                             ORDER BY r.Date_Completed DESC
                         ";
@@ -79,7 +81,8 @@ if (empty($emp_id)) {
                                     : 'N/A';
 
                                 $percentage = $total > 0 ? ($score / $total) * 100 : 0;
-                                $status = $percentage >= 75 ? "Passed" : "Failed";
+                                $passingRateRow = isset($row['PassingRate']) ? intval($row['PassingRate']) : 75;
+                                $status = $percentage >= $passingRateRow ? "Passed" : "Failed";
                                 $statusBgColor = $status === "Passed" ? "emerald-100" : "red-100";
                                 $statusTextColor = $status === "Passed" ? "emerald-700" : "red-700";
 
@@ -94,7 +97,7 @@ if (empty($emp_id)) {
                                 echo "
                                 <tr class='hover:bg-slate-50 transition'>
                                     <td class='px-6 py-4 text-sm font-medium text-slate-800'>{$examTitle}</td>
-                                    <td class='px-6 py-4 text-sm text-slate-600 text-center'><span class='font-semibold'>{$score}</span> / {$total}</td>
+                                    <td class='px-6 py-4 text-sm text-slate-600 text-center'><span class='font-semibold'>{$score}</span> / {$total}<br><span class='text-xs text-slate-500'>Pass: {$passingRateRow}%</span></td>
                                     <td class='px-6 py-4 text-sm text-slate-600'>{$dateTaken}</td>
                                     <td class='px-6 py-4 text-center'>
                                         <span class='inline-block px-3 py-1 text-xs font-medium rounded-full bg-{$statusBgColor} text-{$statusTextColor}'>{$status}</span>

@@ -69,6 +69,18 @@ if (!empty($accessHash)) {
     }
 }
 
+// Fetch exam-specific passing rate (if table exists). Default to 75%.
+$passingRate = 75;
+$prStmt = @sqlsrv_query($con3, "IF OBJECT_ID('dbo.Exam_Settings','U') IS NULL SELECT 75 AS PassingRate ELSE SELECT PassingRate FROM dbo.Exam_Settings WHERE Exam_ID = ?", [$exam_id]);
+if ($prStmt) {
+    $prRow = sqlsrv_fetch_array($prStmt, SQLSRV_FETCH_ASSOC);
+    if ($prRow && isset($prRow['PassingRate'])) {
+        $val = intval($prRow['PassingRate']);
+        if ($val > 0 && $val <= 100) $passingRate = $val;
+    }
+    sqlsrv_free_stmt($prStmt);
+}
+
 // Fetch all questions first
  $sql = "SELECT * FROM teipiexam.dbo.Questions WHERE Exam_ID = ?";
  $params = [$exam_id];

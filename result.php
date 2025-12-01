@@ -50,7 +50,18 @@ $dateTaken = ($result['Date_Completed'] instanceof DateTime)
     ? $result['Date_Completed']->format('Y-m-d H:i')
     : 'N/A';
 $percentage = $total > 0 ? round(($score / $total) * 100, 2) : 0;
-$passed = $percentage >= 75;
+// Fetch exam-specific passing rate (fallback to 75)
+$passingRate = 75;
+$prStmt = @sqlsrv_query($con3, "IF OBJECT_ID('dbo.Exam_Settings','U') IS NULL SELECT 75 AS PassingRate ELSE SELECT PassingRate FROM dbo.Exam_Settings WHERE Exam_ID = ?", [$exam_id]);
+if ($prStmt) {
+    $prRow = sqlsrv_fetch_array($prStmt, SQLSRV_FETCH_ASSOC);
+    if ($prRow && isset($prRow['PassingRate'])) {
+        $v = intval($prRow['PassingRate']);
+        if ($v > 0 && $v <= 100) $passingRate = $v;
+    }
+    sqlsrv_free_stmt($prStmt);
+}
+$passed = $percentage >= $passingRate;
 ?>
 
 <!DOCTYPE html>
@@ -85,6 +96,7 @@ $passed = $percentage >= 75;
                             <div class="text-center py-4 bg-slate-50 rounded-lg">
                                 <p class="text-sm text-slate-600 mb-1">Percentage</p>
                                 <p class="text-3xl font-bold text-indigo-600"><?= "{$percentage}%" ?></p>
+                                <p class="text-xs text-slate-500 mt-2">Passing threshold: <strong><?= htmlspecialchars($passingRate) ?>%</strong></p>
                             </div>
                             <p class="text-center text-sm text-slate-500"><strong>Date Taken:</strong> <?= $dateTaken ?></p>
                         </div>

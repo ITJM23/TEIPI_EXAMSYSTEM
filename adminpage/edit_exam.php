@@ -37,11 +37,25 @@ if ($accStmt) {
     sqlsrv_free_stmt($accStmt);
 }
 
+// Fetch current passing rate for this exam (if any)
+$currentPassingRate = null;
+$prStmt = @sqlsrv_query($con3, "IF OBJECT_ID('dbo.Exam_Settings','U') IS NULL SELECT NULL AS PassingRate ELSE SELECT PassingRate FROM dbo.Exam_Settings WHERE Exam_ID = ?", [$exam_id]);
+if ($prStmt) {
+    $prRow = sqlsrv_fetch_array($prStmt, SQLSRV_FETCH_ASSOC);
+    if ($prRow && isset($prRow['PassingRate'])) {
+        $currentPassingRate = intval($prRow['PassingRate']);
+    }
+    sqlsrv_free_stmt($prStmt);
+}
+
 // ---------- Handle Update ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $title = trim($_POST['exam_title'] ?? '');
     $desc  = trim($_POST['exam_description'] ?? '');
     $access_password = trim($_POST['access_password'] ?? '');
+    $remove_access = isset($_POST['remove_access']) && $_POST['remove_access'] == '1';
+    $passing_rate = trim($_POST['passing_rate'] ?? '');
+    $remove_passing_rate = isset($_POST['remove_passing_rate']) && $_POST['remove_passing_rate'] == '1';
     
     if ($title === '') {
         $errors[] = 'Exam title is required.';
@@ -58,12 +72,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // Handle access password if provided (create/replace or remove)
+    // Handle access password: create/replace, remove, or keep existing
     // ensure Exam_Access table exists
     $create_access = "IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.Exam_Access') AND type in (N'U')) CREATE TABLE dbo.Exam_Access (Access_ID INT IDENTITY(1,1) PRIMARY KEY, Exam_ID INT NOT NULL, Access_PasswordHash VARBINARY(255) NOT NULL, Date_Created DATETIME DEFAULT GETDATE(), Created_By VARCHAR(100))";
     @sqlsrv_query($con3, $create_access);
 
-    if ($access_password !== '') {
+    if ($remove_access) {
+        // explicit remove
+        $delAcc2 = "IF OBJECT_ID('dbo.Exam_Access','U') IS NOT NULL DELETE FROM dbo.Exam_Access WHERE Exam_ID = ?";
+        sqlsrv_query($con3, $delAcc2, [$exam_id]);
+        $messages[] = 'Exam access removed (public).';
+        $has_access = false;
+    } elseif ($access_password !== '') {
+        // set/replace password
         $hash = password_hash($access_password, PASSWORD_DEFAULT);
         $delAcc = "IF OBJECT_ID('dbo.Exam_Access','U') IS NOT NULL DELETE FROM dbo.Exam_Access WHERE Exam_ID = ?";
         sqlsrv_query($con3, $delAcc, [$exam_id]);
@@ -72,11 +93,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $messages[] = 'Exam access password updated.';
         $has_access = true;
     } else {
-        // remove access if exists
-        $delAcc2 = "IF OBJECT_ID('dbo.Exam_Access','U') IS NOT NULL DELETE FROM dbo.Exam_Access WHERE Exam_ID = ?";
-        sqlsrv_query($con3, $delAcc2, [$exam_id]);
-        $messages[] = 'Exam access removed (public).';
-        $has_access = false;
+        // no change to access (leave as-is)
+    }
+
+    // Handle passing rate: create/update/remove
+    $create_pr = "IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.Exam_Settings') AND type in (N'U')) CREATE TABLE dbo.Exam_Settings (Setting_ID INT PRIMARY KEY IDENTITY(1,1), Exam_ID INT NOT NULL, PassingRate INT NOT NULL, FOREIGN KEY (Exam_ID) REFERENCES Exams(Exam_ID))";
+    @sqlsrv_query($con3, $create_pr);
+
+    if ($remove_passing_rate) {
+        $delPR = "IF OBJECT_ID('dbo.Exam_Settings','U') IS NOT NULL DELETE FROM dbo.Exam_Settings WHERE Exam_ID = ?";
+        sqlsrv_query($con3, $delPR, [$exam_id]);
+        $messages[] = 'Passing rate removed (now default applies).';
+        $currentPassingRate = null;
+    } elseif ($passing_rate !== '') {
+        $prInt = intval($passing_rate);
+        if ($prInt <= 0 || $prInt > 100) {
+            $errors[] = 'Passing rate must be a number between 1 and 100.';
+        } else {
+            // replace existing
+            $delPR2 = "IF OBJECT_ID('dbo.Exam_Settings','U') IS NOT NULL DELETE FROM dbo.Exam_Settings WHERE Exam_ID = ?";
+            sqlsrv_query($con3, $delPR2, [$exam_id]);
+            $insPR = "INSERT INTO dbo.Exam_Settings (Exam_ID, PassingRate) VALUES (?, ?)";
+            sqlsrv_query($con3, $insPR, [$exam_id, $prInt]);
+            $messages[] = 'Passing rate saved.';
+            $currentPassingRate = $prInt;
+        }
+    } else {
+        // no change to passing rate (leave existing)
     }
 }
 
@@ -130,7 +173,22 @@ if ($q_stmt) {
 <div class="mb-3">
 <label class="form-label">Exam Access Password (optional)</label>
 <input type="password" name="access_password" class="form-control" placeholder="Set an access password to lock the exam">
-<small class="form-text text-muted">Leave empty to keep the exam public. Current: <?php echo $has_access ? '<span class="badge bg-danger">Locked</span>' : '<span class="badge bg-success">Public</span>'; ?></small>
+</div>
+<div class="mb-3 form-check">
+    <input type="checkbox" class="form-check-input" id="remove_access" name="remove_access" value="1">
+    <label class="form-check-label" for="remove_access">Remove existing access / make public</label>
+    <div><small class="form-text text-muted">Leave password blank to keep current password. Check this to remove access.</small></div>
+    <div class="mt-2">Current: <?php echo $has_access ? '<span class="badge bg-danger">Locked</span>' : '<span class="badge bg-success">Public</span>'; ?></div>
+</div>
+            <div class="mb-3">
+                <label class="form-label">Passing Rate (%)</label>
+                <input type="number" name="passing_rate" class="form-control" min="1" max="100" placeholder="e.g., 75" value="<?php echo $currentPassingRate !== null ? htmlspecialchars($currentPassingRate) : ''; ?>">
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" value="1" id="remove_passing_rate" name="remove_passing_rate">
+                    <label class="form-check-label" for="remove_passing_rate">Remove passing rate (use system default)</label>
+                </div>
+                <div class="mt-2"><small class="text-muted">Current: <?php echo $currentPassingRate !== null ? htmlspecialchars($currentPassingRate) . '%': 'Default (75%)'; ?></small></div>
+            </div>
 </div>
 <div class="d-flex justify-content-between">
 <a href="adminindex.php" class="btn btn-secondary">Cancel</a>
