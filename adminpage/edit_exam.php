@@ -159,42 +159,61 @@ if ($q_stmt) {
 
 <div class="row">
 <div class="col-md-5">
-<div class="card p-4 shadow-sm mb-4">
-<h5 class="mb-3">Exam Details</h5>
-<form method="POST">
-<div class="mb-3">
-<label class="form-label">Exam Title <span class="text-danger">*</span></label>
-<input class="form-control" name="exam_title" value="<?php echo htmlspecialchars($exam['Exam_Title']); ?>" required>
-</div>
-<div class="mb-3">
-<label class="form-label">Description</label>
-<textarea class="form-control" name="exam_description" rows="4"><?php echo htmlspecialchars($exam['Description']); ?></textarea>
-</div>
-<div class="mb-3">
-<label class="form-label">Exam Access Password (optional)</label>
-<input type="password" name="access_password" class="form-control" placeholder="Set an access password to lock the exam">
-</div>
-<div class="mb-3 form-check">
-    <input type="checkbox" class="form-check-input" id="remove_access" name="remove_access" value="1">
-    <label class="form-check-label" for="remove_access">Remove existing access / make public</label>
-    <div><small class="form-text text-muted">Leave password blank to keep current password. Check this to remove access.</small></div>
-    <div class="mt-2">Current: <?php echo $has_access ? '<span class="badge bg-danger">Locked</span>' : '<span class="badge bg-success">Public</span>'; ?></div>
-</div>
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h5 class="card-title mb-2">Exam Details</h5>
+        <p class="text-muted small mb-4">Update title, description, access and passing settings for this exam.</p>
+
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label">Exam Title <span class="text-danger">*</span></label>
+                <div class="input-group">
+                    <span class="input-group-text">📘</span>
+                    <input class="form-control" name="exam_title" value="<?php echo htmlspecialchars($exam['Exam_Title']); ?>" required>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Description</label>
+                <textarea class="form-control" name="exam_description" rows="4"><?php echo htmlspecialchars($exam['Description']); ?></textarea>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Exam Access Password (optional)</label>
+                <div class="input-group">
+                    <span class="input-group-text">🔒</span>
+                    <input type="password" name="access_password" class="form-control" placeholder="Set an access password to lock the exam">
+                </div>
+                <div class="form-text mt-2">Leave empty to keep current password. Use the checkbox below to remove access.</div>
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="remove_access" name="remove_access" value="1">
+                <label class="form-check-label" for="remove_access">Remove existing access / make public</label>
+                <div class="mt-2">Status: <?php echo $has_access ? '<span class="badge bg-danger">Locked</span>' : '<span class="badge bg-success">Public</span>'; ?></div>
+            </div>
+
+            <hr>
+
             <div class="mb-3">
                 <label class="form-label">Passing Rate (%)</label>
-                <input type="number" name="passing_rate" class="form-control" min="1" max="100" placeholder="e.g., 75" value="<?php echo $currentPassingRate !== null ? htmlspecialchars($currentPassingRate) : ''; ?>">
+                <div class="input-group">
+                    <input type="number" name="passing_rate" class="form-control" min="1" max="100" placeholder="e.g., 75" value="<?php echo $currentPassingRate !== null ? htmlspecialchars($currentPassingRate) : ''; ?>">
+                    <span class="input-group-text">%</span>
+                </div>
                 <div class="form-check mt-2">
                     <input class="form-check-input" type="checkbox" value="1" id="remove_passing_rate" name="remove_passing_rate">
                     <label class="form-check-label" for="remove_passing_rate">Remove passing rate (use system default)</label>
                 </div>
                 <div class="mt-2"><small class="text-muted">Current: <?php echo $currentPassingRate !== null ? htmlspecialchars($currentPassingRate) . '%': 'Default (75%)'; ?></small></div>
             </div>
-</div>
-<div class="d-flex justify-content-between">
-<a href="adminindex.php" class="btn btn-secondary">Cancel</a>
-<button class="btn btn-primary">Update Exam</button>
-</div>
-</form>
+
+            <div class="d-flex justify-content-between mt-4">
+                <a href="adminindex.php" class="btn btn-outline-secondary">Cancel</a>
+                <button class="btn btn-primary">Update Exam</button>
+            </div>
+        </form>
+    </div>
 </div>
 </div>
 

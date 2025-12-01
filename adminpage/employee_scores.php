@@ -63,7 +63,7 @@ $emp_id = $_COOKIE['EIMS_emp_Id'] ?? '';
           <thead class="bg-slate-50">
             <tr>
               <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-700" data-sort="title">Exam Title</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-700" data-sort="emp_id">Employee ID</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-700" data-sort="emp_name">Employee</th>
               <th class="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-700" data-sort="score">Score</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-700" data-sort="date">Date Taken</th>
               <th class="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:text-slate-700" data-sort="status">Status</th>
@@ -77,13 +77,17 @@ $emp_id = $_COOKIE['EIMS_emp_Id'] ?? '';
                     SELECT 
                         e.Exam_Title, 
                         r.Emp_ID,
+                        emp.Fname, emp.Lname,
                         r.Score, 
                         r.TotalQuestions,
                         r.Date_Completed,
                         r.Exam_ID,
-                        r.Result_ID
+                        r.Result_ID,
+                        ISNULL(es.PassingRate, 75) AS PassingRate
                     FROM dbo.Results AS r
                     INNER JOIN dbo.Exams AS e ON e.Exam_ID = r.Exam_ID
+                    LEFT JOIN dbo.Exam_Settings es ON r.Exam_ID = es.Exam_ID
+                    LEFT JOIN teipi_emp3.teipi_emp3.emp_info emp ON r.Emp_ID = emp.Emp_Id
                     ORDER BY r.Date_Completed DESC
                 ";
 
@@ -96,6 +100,7 @@ $emp_id = $_COOKIE['EIMS_emp_Id'] ?? '';
                     while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
                         $examTitle = htmlspecialchars($row['Exam_Title']);
                         $Emp_ID = htmlspecialchars($row['Emp_ID']);
+                        $empName = trim((string)($row['Fname'] ?? '') . ' ' . (string)($row['Lname'] ?? '')) ?: $Emp_ID;
                         $score = (int)$row['Score'];
                         $total = (int)$row['TotalQuestions'];
 
@@ -104,7 +109,8 @@ $emp_id = $_COOKIE['EIMS_emp_Id'] ?? '';
                             : 'N/A';
 
                         $percentage = $total > 0 ? ($score / $total) * 100 : 0;
-                        $status = $percentage >= 75 ? "Passed" : "Failed";
+                        $passingRateRow = isset($row['PassingRate']) ? intval($row['PassingRate']) : 75;
+                        $status = $percentage >= $passingRateRow ? "Passed" : "Failed";
                         $statusColor = $status === "Passed" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700";
                         $scorePercent = round($percentage, 1);
 
@@ -117,13 +123,15 @@ $emp_id = $_COOKIE['EIMS_emp_Id'] ?? '';
                         $rows[] = [
                             'title' => $examTitle,
                             'emp_id' => $Emp_ID,
+                            'emp_name' => $empName,
                             'score' => $score,
                             'total' => $total,
                             'percent' => $scorePercent,
                             'date' => $dateTaken,
                             'status' => $status,
                             'statusColor' => $statusColor,
-                            'viewUrl' => $viewUrl
+                            'viewUrl' => $viewUrl,
+                            'passingRate' => $passingRateRow
                         ];
                     }
                     sqlsrv_free_stmt($stmt);
@@ -170,16 +178,17 @@ function renderTable(){
         return;
     }
     
-    pageData.forEach(row => {
+        pageData.forEach(row => {
         const tr = document.createElement('tr');
         tr.className = 'hover:bg-slate-50';
         tr.innerHTML = `
             <td class="px-6 py-4 text-sm font-medium text-slate-800">${row.title}</td>
-            <td class="px-6 py-4 text-sm text-slate-600">${row.emp_id}</td>
-            <td class="px-6 py-4 text-sm text-center">
-              <span class="font-medium text-slate-700">${row.score}/${row.total}</span><br/>
-              <span class="text-xs text-slate-500">${row.percent}%</span>
-            </td>
+            <td class="px-6 py-4 text-sm text-slate-600">${row.emp_name} <div class="text-xs text-slate-400">(${row.emp_id})</div></td>
+                        <td class="px-6 py-4 text-sm text-center">
+                            <span class="font-medium text-slate-700">${row.score}/${row.total}</span><br/>
+                            <span class="text-xs text-slate-500">${row.percent}%</span><br/>
+                            <span class="text-xs text-slate-500">Pass: ${row.passingRate}%</span>
+                        </td>
             <td class="px-6 py-4 text-sm text-slate-600">${row.date}</td>
             <td class="px-6 py-4 text-center">
               <span class="inline-block px-3 py-1 text-xs font-medium rounded-full ${row.statusColor}">${row.status}</span>
@@ -235,6 +244,7 @@ function filterAndSort(){
     currentData = allData.filter(row => {
         const matchSearch = !searchTerm || 
             row.title.toLowerCase().includes(searchTerm) || 
+            (row.emp_name && row.emp_name.toLowerCase().includes(searchTerm)) ||
             row.emp_id.toLowerCase().includes(searchTerm);
         const matchStatus = !statusFilter || row.status === statusFilter;
         return matchSearch && matchStatus;
