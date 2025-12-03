@@ -57,10 +57,12 @@ function getEmployeeCertificates($con, $emp) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Employee Progress</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
 </head>
 <body class="bg-slate-50 min-h-screen text-slate-800">
+<?php include 'admin_navbar.php'; ?>
   <div class="max-w-7xl mx-auto px-6 py-8">
     <header class="flex items-center justify-between mb-8">
         <div>

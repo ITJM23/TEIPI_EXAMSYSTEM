@@ -39,6 +39,93 @@ include "includes/db.php";
                     </div>
                 </header>
 
+                <?php
+                // Fetch expiring patches and certificates (10 days or less)
+                $expiring_patches = [];
+                $expiring_certs = [];
+                
+                $sql_exp_patches = "
+                    SELECT p.Patch_Name, ep.Expiration_Date, DATEDIFF(DAY, GETDATE(), ep.Expiration_Date) as days_left
+                    FROM dbo.Employee_Patches ep
+                    JOIN dbo.Patches p ON ep.Patch_ID = p.Patch_ID
+                    WHERE ep.Emp_ID = ? 
+                    AND ep.Expiration_Date IS NOT NULL
+                    AND DATEDIFF(DAY, GETDATE(), ep.Expiration_Date) BETWEEN 0 AND 10
+                    ORDER BY ep.Expiration_Date ASC
+                ";
+                $stmt_exp_p = @sqlsrv_query($con3, $sql_exp_patches, [$emp_id]);
+                if ($stmt_exp_p) {
+                    while ($r = sqlsrv_fetch_array($stmt_exp_p, SQLSRV_FETCH_ASSOC)) {
+                        $expiring_patches[] = $r;
+                    }
+                    sqlsrv_free_stmt($stmt_exp_p);
+                }
+
+                $sql_exp_certs = "
+                    SELECT c.Certificate_Name, ec.Expiration_Date, DATEDIFF(DAY, GETDATE(), ec.Expiration_Date) as days_left
+                    FROM dbo.Employee_Certificates ec
+                    JOIN dbo.Certificates c ON ec.Certificate_ID = c.Certificate_ID
+                    WHERE ec.Emp_ID = ? 
+                    AND ec.Expiration_Date IS NOT NULL
+                    AND DATEDIFF(DAY, GETDATE(), ec.Expiration_Date) BETWEEN 0 AND 10
+                    ORDER BY ec.Expiration_Date ASC
+                ";
+                $stmt_exp_c = @sqlsrv_query($con3, $sql_exp_certs, [$emp_id]);
+                if ($stmt_exp_c) {
+                    while ($r = sqlsrv_fetch_array($stmt_exp_c, SQLSRV_FETCH_ASSOC)) {
+                        $expiring_certs[] = $r;
+                    }
+                    sqlsrv_free_stmt($stmt_exp_c);
+                }
+                ?>
+
+                <!-- Expiration Notifications -->
+                <?php if (!empty($expiring_patches) || !empty($expiring_certs)): ?>
+                <section class="mb-8 animate-pulse">
+                    <div class="bg-red-100 border-2 border-red-600 rounded-xl p-5 shadow-lg">
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0">
+                                <svg class="h-8 w-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                            </div>
+                            <div class="ml-3 flex-1">
+                                <h3 class="text-lg font-bold text-red-800 uppercase">⚠️ Expiration Alerts</h3>
+                                <div class="mt-2 text-sm text-red-800">
+                                    <?php if (!empty($expiring_patches)): ?>
+                                        <p class="font-bold mb-2 text-base">🔴 Patches expiring soon:</p>
+                                        <ul class="list-disc list-inside mb-4 space-y-1 bg-white bg-opacity-50 rounded p-3">
+                                            <?php foreach ($expiring_patches as $ep): ?>
+                                                <li class="font-medium">
+                                                    <strong class="text-red-900"><?php echo htmlspecialchars($ep['Patch_Name']); ?></strong> 
+                                                    - expires in <span class="font-bold text-red-900"><?php echo (int)$ep['days_left']; ?> day<?php echo ((int)$ep['days_left'] !== 1) ? 's' : ''; ?></span>
+                                                    (<?php echo $ep['Expiration_Date'] instanceof DateTime ? $ep['Expiration_Date']->format('M d, Y') : htmlspecialchars($ep['Expiration_Date']); ?>)
+                                                </li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                    <?php endif; ?>
+                                    <?php if (!empty($expiring_certs)): ?>
+                                        <p class="font-bold mb-2 text-base">🔴 Certificates expiring soon:</p>
+                                        <ul class="list-disc list-inside space-y-1 bg-white bg-opacity-50 rounded p-3">
+                                            <?php foreach ($expiring_certs as $ec): ?>
+                                                <li class="font-medium">
+                                                    <strong class="text-red-900"><?php echo htmlspecialchars($ec['Certificate_Name']); ?></strong> 
+                                                    - expires in <span class="font-bold text-red-900"><?php echo (int)$ec['days_left']; ?> day<?php echo ((int)$ec['days_left'] !== 1) ? 's' : ''; ?></span>
+                                                    (<?php echo $ec['Expiration_Date'] instanceof DateTime ? $ec['Expiration_Date']->format('M d, Y') : htmlspecialchars($ec['Expiration_Date']); ?>)
+                                                </li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                    <?php endif; ?>
+                                    <p class="mt-4 text-sm font-bold bg-red-200 p-2 rounded">
+                                        💡 <em>ACTION REQUIRED: Renew by retaking the associated exams before they expire!</em>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                <?php endif; ?>
+
                 <!-- Stats -->
                 <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                     <?php

@@ -119,6 +119,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 </head>
 
 <body class="bg-light">
+<?php include 'admin_navbar.php'; ?>
 <div class="container py-4">
 
 <a href="edit_exam.php?exam_id=<?php echo $exam_id; ?>" class="btn btn-secondary mb-3">← Back</a>

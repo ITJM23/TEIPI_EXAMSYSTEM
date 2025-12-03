@@ -220,14 +220,9 @@ if ($e_stmt) {
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
+<?php include 'admin_navbar.php'; ?>
 <div class="container py-4">
-<div class="d-flex justify-content-between align-items-center mb-4">
 <h2>Admin Dashboard — Exams</h2>
-<div>
-<a href="dashboard_home.php" class="btn btn-outline-secondary">Main Dashboard</a>
-<a href="../logout.php" class="btn btn-danger">Logout</a>
-</div>
-</div>
 
 <?php foreach ($messages as $m): ?>
 <div class="alert alert-success"><?php echo htmlspecialchars($m); ?></div>

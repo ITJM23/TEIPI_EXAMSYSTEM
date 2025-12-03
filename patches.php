@@ -108,6 +108,59 @@ if ($stmt_avail) {
       <main class="flex-1 overflow-auto">
         <div class="max-w-7xl mx-auto px-6 py-8">
           
+          <?php
+          // Fetch expiring patches (10 days or less)
+          $expiring_patches = [];
+          $sql_exp = "
+              SELECT p.Patch_Name, ep.Expiration_Date, DATEDIFF(DAY, GETDATE(), ep.Expiration_Date) as days_left
+              FROM dbo.Employee_Patches ep
+              JOIN dbo.Patches p ON ep.Patch_ID = p.Patch_ID
+              WHERE ep.Emp_ID = ? 
+              AND ep.Expiration_Date IS NOT NULL
+              AND DATEDIFF(DAY, GETDATE(), ep.Expiration_Date) BETWEEN 0 AND 10
+              ORDER BY ep.Expiration_Date ASC
+          ";
+          $stmt_exp = @sqlsrv_query($con3, $sql_exp, [$emp_id]);
+          if ($stmt_exp) {
+              while ($r = sqlsrv_fetch_array($stmt_exp, SQLSRV_FETCH_ASSOC)) {
+                  $expiring_patches[] = $r;
+              }
+              sqlsrv_free_stmt($stmt_exp);
+          }
+          ?>
+
+          <!-- Expiration Notifications -->
+          <?php if (!empty($expiring_patches)): ?>
+          <section class="mb-8 animate-pulse">
+              <div class="bg-red-100 border-2 border-red-600 rounded-xl p-5 shadow-lg">
+                  <div class="flex items-start">
+                      <div class="flex-shrink-0">
+                          <svg class="h-8 w-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                          </svg>
+                      </div>
+                      <div class="ml-3 flex-1">
+                          <h3 class="text-lg font-bold text-red-800 uppercase">⚠️ Patches Expiring Soon</h3>
+                          <div class="mt-2 text-sm text-red-800">
+                              <ul class="list-disc list-inside space-y-1 bg-white bg-opacity-50 rounded p-3">
+                                  <?php foreach ($expiring_patches as $ep): ?>
+                                      <li class="font-medium">
+                                          <strong class="text-red-900"><?php echo htmlspecialchars($ep['Patch_Name']); ?></strong> 
+                                          - expires in <span class="font-bold text-red-900"><?php echo (int)$ep['days_left']; ?> day<?php echo ((int)$ep['days_left'] !== 1) ? 's' : ''; ?></span>
+                                          (<?php echo $ep['Expiration_Date'] instanceof DateTime ? $ep['Expiration_Date']->format('M d, Y') : htmlspecialchars($ep['Expiration_Date']); ?>)
+                                      </li>
+                                  <?php endforeach; ?>
+                              </ul>
+                              <p class="mt-4 text-sm font-bold bg-red-200 p-2 rounded">
+                                  💡 <em>ACTION REQUIRED: Renew by retaking the associated exams before they expire!</em>
+                              </p>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </section>
+          <?php endif; ?>
+
           <!-- Earned Patches -->
           <div>
             <h2 class="text-2xl font-bold text-slate-800 mb-6">✅ Earned Patches</h2>
@@ -142,18 +195,78 @@ if ($stmt_avail) {
                         </div>
                       </div>
 
-                      <div class="flex items-center justify-between text-sm text-slate-500">
-                        <span>Earned on:</span>
-                        <span class="font-medium">
-                          <?php 
-                            $date = $patch['Date_Earned'];
-                            if ($date instanceof DateTime) {
-                              echo $date->format('M d, Y');
-                            } else {
-                              echo htmlspecialchars($date);
+                      <div class="space-y-1 text-sm text-slate-600">
+                        <div class="flex items-center justify-between">
+                          <span>Earned on:</span>
+                          <span class="font-medium">
+                            <?php 
+                              $date = $patch['Date_Earned'];
+                              if ($date instanceof DateTime) {
+                                echo $date->format('M d, Y');
+                              } else {
+                                echo htmlspecialchars($date);
+                              }
+                            ?>
+                          </span>
+                        </div>
+                        <?php 
+                          $expired = false; $daysLeft = null; 
+                          $hasExp = isset($patch['Expiration_Date']) && $patch['Expiration_Date'] !== null;
+                          if ($hasExp) {
+                            $dt = $patch['Expiration_Date'];
+                            if ($dt instanceof DateTime) {
+                              $daysLeft = (int)date_diff(new DateTime(), $dt)->format('%r%a');
+                              $expired = ($daysLeft < 0);
                             }
-                          ?>
-                        </span>
+                          }
+                        ?>
+                        <div class="flex items-center justify-between <?php echo ($hasExp && $expired) ? 'text-red-600' : 'text-slate-600'; ?>">
+                          <span>Expires:</span>
+                          <span class="font-medium">
+                            <?php 
+                              if ($hasExp) {
+                                $exp = $patch['Expiration_Date'];
+                                if ($exp instanceof DateTime) {
+                                  echo $exp->format('M d, Y');
+                                } else {
+                                  echo htmlspecialchars($exp);
+                                }
+                              } else {
+                                echo 'No expiration';
+                              }
+                            ?>
+                            <?php if ($hasExp && isset($daysLeft) && $daysLeft !== null): ?>
+                              <span class="ml-2 inline-block px-2 py-0.5 rounded-full text-xs <?php echo ($daysLeft <= 10 && $daysLeft >= 0) ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-600'; ?>">
+                                <?php echo $daysLeft >= 0 ? ($daysLeft . ' days left') : (abs($daysLeft) . ' days past'); ?>
+                              </span>
+                            <?php endif; ?>
+                          </span>
+                        </div>
+                        <?php 
+                          // Policy source from Patches
+                          $policy = '';
+                          $pinfo = sqlsrv_query($con3, "SELECT is_Unlimited, Expiration_Days, Expiration_Date FROM dbo.Patches WHERE Patch_ID = ?", [$patch['Patch_ID']]);
+                          if ($pinfo) {
+                            $pi = sqlsrv_fetch_array($pinfo, SQLSRV_FETCH_ASSOC);
+                            sqlsrv_free_stmt($pinfo);
+                            if ($pi) {
+                              if ((int)($pi['is_Unlimited'] ?? 0) === 1) {
+                                $policy = 'Unlimited';
+                              } elseif (isset($pi['Expiration_Days']) && $pi['Expiration_Days'] !== null) {
+                                $policy = (int)$pi['Expiration_Days'] . ' days policy';
+                              } elseif (isset($pi['Expiration_Date']) && $pi['Expiration_Date'] !== null) {
+                                $d = $pi['Expiration_Date'];
+                                $policy = 'Expires by ' . ($d instanceof DateTime ? $d->format('Y-m-d') : htmlspecialchars($d));
+                              }
+                            }
+                          }
+                        ?>
+                        <?php if (!empty($policy)): ?>
+                        <div class="flex items-center justify-between text-xs text-slate-500">
+                          <span>Policy:</span>
+                          <span><?php echo htmlspecialchars($policy); ?></span>
+                        </div>
+                        <?php endif; ?>
                       </div>
                     </div>
                   </div>

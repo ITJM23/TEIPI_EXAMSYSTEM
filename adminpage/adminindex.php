@@ -54,22 +54,12 @@ if ($e_stmt) {
 <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-50 min-h-screen text-slate-800">
+<?php include 'admin_navbar.php'; ?>
 <div class="max-w-7xl mx-auto px-6 py-8">
-    <!-- Header -->
-    <header class="flex items-center justify-between mb-8">
-        <div>
-            <h1 class="text-3xl font-bold text-slate-800">Admin Dashboard</h1>
-            <p class="text-sm text-slate-500">Manage exams and questions</p>
-        </div>
-        <nav class="flex items-center gap-2">
-            <a href="adminindex.php" class="inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg">Dashboard</a>
-            <a href="patches.php" class="inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg">Patches</a>
-            <a href="certificates.php" class="inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg">Certificates</a>
-            <a href="employee_progress.php" class="inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg">Employee Progress</a>
-            <a href="employee_scores.php" class="inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg">Scores</a>
-            <a href="../logout.php" class="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg">Logout</a>
-        </nav>
-    </header>
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-slate-800">Admin Dashboard</h1>
+        <p class="text-sm text-slate-500">Manage exams and questions</p>
+    </div>
 
     <!-- Messages & Errors -->
     <?php foreach ($messages as $m): ?>

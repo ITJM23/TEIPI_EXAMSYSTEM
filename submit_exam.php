@@ -163,18 +163,30 @@ if ($result_id <= 0) {
     die("<div style='color:red;'>Failed to retrieve inserted Result_ID.</div>");
 }
 
-/* 🎁 Grant patches if exam passed (>=75%) */
+/* 🎁 Grant patches if exam passed (per-exam passing rate) */
+// Fetch per-exam passing rate from Exam_Settings (fallback 75)
+$passing_rate = 75;
+$pr_stmt = sqlsrv_query($con3, "IF OBJECT_ID('dbo.Exam_Settings','U') IS NULL SELECT 75 AS PassingRate ELSE SELECT TOP 1 PassingRate FROM dbo.Exam_Settings WHERE Exam_ID = ?", [$exam_id]);
+if ($pr_stmt) {
+    $pr = sqlsrv_fetch_array($pr_stmt, SQLSRV_FETCH_ASSOC);
+    if ($pr && isset($pr['PassingRate'])) {
+        $passing_rate = (float)$pr['PassingRate'];
+    }
+    sqlsrv_free_stmt($pr_stmt);
+}
 $passing_percentage = ($total_questions > 0) ? ($total_score / $total_questions) * 100 : 0;
-if ($passing_percentage >= 75) {
+if ($passing_percentage >= $passing_rate) {
     // Ensure Employee_Patches table exists
     $create_table = "IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.Employee_Patches') AND type in (N'U')) 
         CREATE TABLE dbo.Employee_Patches (
             Emp_ID NVARCHAR(MAX) NOT NULL,
             Patch_ID INT NOT NULL,
             Date_Earned DATETIME DEFAULT GETDATE(),
+            Expiration_Date DATETIME NULL,
             PRIMARY KEY (Emp_ID, Patch_ID)
         )";
     @sqlsrv_query($con3, $create_table);
+    @sqlsrv_query($con3, "IF COL_LENGTH('dbo.Employee_Patches','Expiration_Date') IS NULL ALTER TABLE dbo.Employee_Patches ADD Expiration_Date DATETIME NULL");
     
     // Get patches linked to this exam
     $patch_sql = "SELECT Patch_ID FROM dbo.Exam_Patches WHERE Exam_ID = ?";
@@ -184,11 +196,74 @@ if ($passing_percentage >= 75) {
         while ($patch_row = sqlsrv_fetch_array($patch_stmt, SQLSRV_FETCH_ASSOC)) {
             $patch_id = $patch_row['Patch_ID'];
             
-            // Insert into Employee_Patches (ignore if already exists due to PRIMARY KEY)
+            // Insert/update Employee_Patches with computed Expiration_Date
+            // Use Patches: is_Unlimited, Expiration_Days (INT), or absolute Expiration_Date (DATETIME)
+            @sqlsrv_query($con3, "IF COL_LENGTH('dbo.Patches','Expiration_Days') IS NULL ALTER TABLE dbo.Patches ADD Expiration_Days INT NULL");
             $grant_sql = "
-                INSERT INTO dbo.Employee_Patches (Emp_ID, Patch_ID, Date_Earned)
-                VALUES (?, ?, GETDATE())
-            ";
+                MERGE dbo.Employee_Patches AS target
+                USING (SELECT ? AS Emp_ID, ? AS Patch_ID) AS src
+                ON (target.Emp_ID = src.Emp_ID AND target.Patch_ID = src.Patch_ID)
+                WHEN NOT MATCHED THEN
+                    INSERT (Emp_ID, Patch_ID, Date_Earned, Expiration_Date)
+                    VALUES (src.Emp_ID, src.Patch_ID, GETDATE(),
+                        CASE 
+                            /* If any linked certificate is Unlimited, treat as Unlimited */
+                            WHEN EXISTS (
+                                SELECT 1 FROM dbo.Certificate_Patches cp 
+                                JOIN dbo.Certificates c ON cp.Certificate_ID = c.Certificate_ID
+                                WHERE cp.Patch_ID = src.Patch_ID AND ISNULL(c.is_Unlimited,0) = 1
+                            ) THEN NULL
+                            /* Otherwise, if there are any linked certificates, use the longest certificate-based expiration */
+                            WHEN EXISTS (
+                                SELECT 1 FROM dbo.Certificate_Patches cp WHERE cp.Patch_ID = src.Patch_ID
+                            ) THEN (
+                                SELECT MAX(exp) FROM (
+                                    SELECT DATEADD(DAY, c.Expiration_Days, GETDATE()) AS exp
+                                    FROM dbo.Certificate_Patches cp 
+                                    JOIN dbo.Certificates c ON cp.Certificate_ID = c.Certificate_ID
+                                    WHERE cp.Patch_ID = src.Patch_ID AND c.Expiration_Days IS NOT NULL
+                                    UNION ALL
+                                    SELECT c.Expiration_Date AS exp
+                                    FROM dbo.Certificate_Patches cp 
+                                    JOIN dbo.Certificates c ON cp.Certificate_ID = c.Certificate_ID
+                                    WHERE cp.Patch_ID = src.Patch_ID AND c.Expiration_Date IS NOT NULL
+                                ) AS certExp
+                            )
+                            /* Fallback to patch policy */
+                            WHEN EXISTS (SELECT 1 FROM dbo.Patches p WHERE p.Patch_ID = src.Patch_ID AND ISNULL(p.is_Unlimited,0)=1) THEN NULL
+                            WHEN EXISTS (SELECT 1 FROM dbo.Patches p WHERE p.Patch_ID = src.Patch_ID AND p.Expiration_Days IS NOT NULL) THEN DATEADD(DAY, (SELECT p.Expiration_Days FROM dbo.Patches p WHERE p.Patch_ID = src.Patch_ID), GETDATE())
+                            WHEN EXISTS (SELECT 1 FROM dbo.Patches p WHERE p.Patch_ID = src.Patch_ID AND p.Expiration_Date IS NOT NULL) THEN (SELECT p.Expiration_Date FROM dbo.Patches p WHERE p.Patch_ID = src.Patch_ID)
+                            ELSE NULL 
+                        END
+                    )
+                WHEN MATCHED THEN
+                    UPDATE SET Date_Earned = GETDATE(), Expiration_Date = 
+                        CASE 
+                            WHEN EXISTS (
+                                SELECT 1 FROM dbo.Certificate_Patches cp 
+                                JOIN dbo.Certificates c ON cp.Certificate_ID = c.Certificate_ID
+                                WHERE cp.Patch_ID = src.Patch_ID AND ISNULL(c.is_Unlimited,0) = 1
+                            ) THEN NULL
+                            WHEN EXISTS (
+                                SELECT 1 FROM dbo.Certificate_Patches cp WHERE cp.Patch_ID = src.Patch_ID
+                            ) THEN (
+                                SELECT MAX(exp) FROM (
+                                    SELECT DATEADD(DAY, c.Expiration_Days, GETDATE()) AS exp
+                                    FROM dbo.Certificate_Patches cp 
+                                    JOIN dbo.Certificates c ON cp.Certificate_ID = c.Certificate_ID
+                                    WHERE cp.Patch_ID = src.Patch_ID AND c.Expiration_Days IS NOT NULL
+                                    UNION ALL
+                                    SELECT c.Expiration_Date AS exp
+                                    FROM dbo.Certificate_Patches cp 
+                                    JOIN dbo.Certificates c ON cp.Certificate_ID = c.Certificate_ID
+                                    WHERE cp.Patch_ID = src.Patch_ID AND c.Expiration_Date IS NOT NULL
+                                ) AS certExp
+                            )
+                            WHEN EXISTS (SELECT 1 FROM dbo.Patches p WHERE p.Patch_ID = src.Patch_ID AND ISNULL(p.is_Unlimited,0)=1) THEN NULL
+                            WHEN EXISTS (SELECT 1 FROM dbo.Patches p WHERE p.Patch_ID = src.Patch_ID AND p.Expiration_Days IS NOT NULL) THEN DATEADD(DAY, (SELECT p.Expiration_Days FROM dbo.Patches p WHERE p.Patch_ID = src.Patch_ID), GETDATE())
+                            WHEN EXISTS (SELECT 1 FROM dbo.Patches p WHERE p.Patch_ID = src.Patch_ID AND p.Expiration_Date IS NOT NULL) THEN (SELECT p.Expiration_Date FROM dbo.Patches p WHERE p.Patch_ID = src.Patch_ID)
+                            ELSE target.Expiration_Date 
+                        END;";
             @sqlsrv_query($con3, $grant_sql, [$emp_id, $patch_id]);
         }
         sqlsrv_free_stmt($patch_stmt);

@@ -2,15 +2,20 @@
 include "../includes/sessions.php";
 include "../includes/db.php";
 
+
+
 date_default_timezone_set('Asia/Manila');
 
 $messages = [];
 $errors   = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
     $title       = trim($_POST['title'] ?? '');
     $description = trim($_POST['description'] ?? '');
-    $created_by  = $_SESSION['Emp_Id'] ?? null;  // Or your admin ID field
+
+    // Pull ID from SESSION (loaded from cookies)
+    $created_by  = $_SESSION['EIMS_emp_Id'] ?? null;
 
     if ($title === '') {
         $errors[] = "Exam title is required.";
@@ -43,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 
 <body class="bg-light">
+<?php include 'admin_navbar.php'; ?>
 <div class="container py-4">
 
 <h3>Create New Exam</h3>

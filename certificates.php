@@ -11,7 +11,11 @@ if (empty($emp_id)) {
 
 // --- Helper functions for eligibility checks (available to both POST and display) ---
 function employeeHasPassedExam($con, $emp, $examId) {
-  $sql = "SELECT TOP 1 Score, TotalQuestions FROM dbo.Results WHERE Emp_ID = ? AND Exam_ID = ? ORDER BY Date_Completed DESC";
+  $sql = "SELECT TOP 1 r.Score, r.TotalQuestions, COALESCE(es.PassingRate, 75) AS PassingRate
+          FROM dbo.Results r
+          LEFT JOIN dbo.Exam_Settings es ON es.Exam_ID = r.Exam_ID
+          WHERE r.Emp_ID = ? AND r.Exam_ID = ?
+          ORDER BY r.Date_Completed DESC";
   $stmt = sqlsrv_query($con, $sql, [$emp, $examId]);
   if ($stmt) {
     $r = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
@@ -20,7 +24,8 @@ function employeeHasPassedExam($con, $emp, $examId) {
       $score = (int)$r['Score'];
       $total = (int)$r['TotalQuestions'];
       $pct = ($total>0) ? ($score / $total) * 100 : 0;
-      return $pct >= 75; // passing threshold
+      $thr = (float)($r['PassingRate'] ?? 75);
+      return $pct >= $thr;
     }
   }
   return false;
@@ -85,7 +90,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         sqlsrv_free_stmt($chk);
       }
       if ($already === 0) {
-        $ins = sqlsrv_query($con3, "INSERT INTO dbo.Employee_Certificates (Emp_ID, Certificate_ID, Date_Earned) VALUES (?, ?, GETDATE())", [$emp_id, $claim_cert_id]);
+        // Ensure Employee_Certificates has Expiration_Date
+        @sqlsrv_query($con3, "IF COL_LENGTH('dbo.Employee_Certificates','Expiration_Date') IS NULL ALTER TABLE dbo.Employee_Certificates ADD Expiration_Date DATETIME NULL");
+        // Ensure Certificates has Expiration_Days for duration support
+        @sqlsrv_query($con3, "IF COL_LENGTH('dbo.Certificates','Expiration_Days') IS NULL ALTER TABLE dbo.Certificates ADD Expiration_Days INT NULL");
+        // Insert with computed Expiration_Date: unlimited -> NULL; days -> DATEADD; date -> use abs date
+        $ins = sqlsrv_query($con3, 
+          "INSERT INTO dbo.Employee_Certificates (Emp_ID, Certificate_ID, Date_Earned, Expiration_Date)
+           SELECT ?, ?, GETDATE(), CASE 
+             WHEN ISNULL(c.is_Unlimited,0)=1 THEN NULL
+             WHEN c.Expiration_Days IS NOT NULL THEN DATEADD(DAY, c.Expiration_Days, GETDATE())
+             WHEN c.Expiration_Date IS NOT NULL THEN c.Expiration_Date
+             ELSE NULL END
+           FROM dbo.Certificates c WHERE c.Certificate_ID = ?",
+          [$emp_id, $claim_cert_id, $claim_cert_id]
+        );
         if ($ins === false) {
           $claim_error = "Error claiming certificate.";
         } else {
@@ -122,11 +141,11 @@ if ($stmt_earned) {
   sqlsrv_free_stmt($stmt_earned);
 }
 // Fetch employee certificates
-$sql = "SELECT c.Certificate_ID, c.Certificate_Name, c.Certificate_Description, ec.Date_Earned
-        FROM dbo.Employee_Certificates ec
-        JOIN dbo.Certificates c ON ec.Certificate_ID = c.Certificate_ID
-        WHERE ec.Emp_ID = ?
-        ORDER BY ec.Date_Earned DESC";
+$sql = "SELECT c.Certificate_ID, c.Certificate_Name, c.Certificate_Description, ec.Date_Earned, ec.Expiration_Date
+  FROM dbo.Employee_Certificates ec
+  JOIN dbo.Certificates c ON ec.Certificate_ID = c.Certificate_ID
+  WHERE ec.Emp_ID = ?
+  ORDER BY ec.Date_Earned DESC";
 $stmt = sqlsrv_query($con3, $sql, [$emp_id]);
 $certificates = [];
 
@@ -181,6 +200,59 @@ if ($stmt) {
             <div class="mb-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg"><?php echo htmlspecialchars($claim_error); ?></div>
           <?php endif; ?>
 
+          <?php
+          // Fetch expiring certificates (10 days or less)
+          $expiring_certs = [];
+          $sql_exp = "
+              SELECT c.Certificate_Name, ec.Expiration_Date, DATEDIFF(DAY, GETDATE(), ec.Expiration_Date) as days_left
+              FROM dbo.Employee_Certificates ec
+              JOIN dbo.Certificates c ON ec.Certificate_ID = c.Certificate_ID
+              WHERE ec.Emp_ID = ? 
+              AND ec.Expiration_Date IS NOT NULL
+              AND DATEDIFF(DAY, GETDATE(), ec.Expiration_Date) BETWEEN 0 AND 10
+              ORDER BY ec.Expiration_Date ASC
+          ";
+          $stmt_exp = @sqlsrv_query($con3, $sql_exp, [$emp_id]);
+          if ($stmt_exp) {
+              while ($r = sqlsrv_fetch_array($stmt_exp, SQLSRV_FETCH_ASSOC)) {
+                  $expiring_certs[] = $r;
+              }
+              sqlsrv_free_stmt($stmt_exp);
+          }
+          ?>
+
+          <!-- Expiration Notifications -->
+          <?php if (!empty($expiring_certs)): ?>
+          <section class="mb-8 animate-pulse">
+              <div class="bg-red-100 border-2 border-red-600 rounded-xl p-5 shadow-lg">
+                  <div class="flex items-start">
+                      <div class="flex-shrink-0">
+                          <svg class="h-8 w-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                          </svg>
+                      </div>
+                      <div class="ml-3 flex-1">
+                          <h3 class="text-lg font-bold text-red-800 uppercase">⚠️ Certificates Expiring Soon</h3>
+                          <div class="mt-2 text-sm text-red-800">
+                              <ul class="list-disc list-inside space-y-1 bg-white bg-opacity-50 rounded p-3">
+                                  <?php foreach ($expiring_certs as $ec): ?>
+                                      <li class="font-medium">
+                                          <strong class="text-red-900"><?php echo htmlspecialchars($ec['Certificate_Name']); ?></strong> 
+                                          - expires in <span class="font-bold text-red-900"><?php echo (int)$ec['days_left']; ?> day<?php echo ((int)$ec['days_left'] !== 1) ? 's' : ''; ?></span>
+                                          (<?php echo $ec['Expiration_Date'] instanceof DateTime ? $ec['Expiration_Date']->format('M d, Y') : htmlspecialchars($ec['Expiration_Date']); ?>)
+                                      </li>
+                                  <?php endforeach; ?>
+                              </ul>
+                              <p class="mt-4 text-sm font-bold bg-red-200 p-2 rounded">
+                                  💡 <em>ACTION REQUIRED: Renew by retaking the associated exams before they expire!</em>
+                              </p>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </section>
+          <?php endif; ?>
+
           <?php if (empty($all_certificates) && empty($certificates)): ?>
             <div class="bg-white rounded-2xl shadow p-12 text-center">
               <svg class="w-16 h-16 text-slate-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -211,18 +283,46 @@ if ($stmt) {
                     </div>
                     <h3 class="text-lg font-bold text-slate-800 mb-2"><?php echo htmlspecialchars($cert['Certificate_Name']); ?></h3>
                     <p class="text-sm text-slate-600 mb-4"><?php echo htmlspecialchars($cert['Certificate_Description'] ?? 'Professional certificate'); ?></p>
-                    <div class="flex items-center justify-between text-sm text-slate-500">
-                      <span>Earned on:</span>
-                      <span class="font-medium">
-                        <?php 
-                          $date = $cert['Date_Earned'];
-                          if ($date instanceof DateTime) {
-                            echo $date->format('M d, Y');
+                    <div class="space-y-1 text-sm text-slate-600">
+                      <div class="flex items-center justify-between">
+                        <span>Earned on:</span>
+                        <span class="font-medium">
+                          <?php 
+                            $date = $cert['Date_Earned'];
+                            if ($date instanceof DateTime) {
+                              echo $date->format('M d, Y');
+                            } else {
+                              echo htmlspecialchars($date);
+                            }
+                          ?>
+                        </span>
+                      </div>
+                      <div class="flex items-center justify-between">
+                        <span>Expires:</span>
+                        <span class="font-medium">
+                          <?php 
+                            $exp = $cert['Expiration_Date'] ?? null;
+                            $hasExp = $exp && ($exp instanceof DateTime || !empty($exp));
+                            if ($hasExp) {
+                              $expDate = $exp instanceof DateTime ? $exp : (is_array($exp) && isset($exp['date']) ? new DateTime($exp['date']) : new DateTime($exp));
+                              echo $expDate->format('M d, Y');
+                            } else {
+                              echo 'No expiration';
+                            }
+                          ?>
+                        </span>
+                      </div>
+                      <?php 
+                        if ($hasExp) {
+                          $now = new DateTime('now');
+                          $diffDays = (int)$now->diff($expDate)->format('%r%a');
+                          if ($diffDays >= 0) {
+                            echo '<span class="inline-block mt-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-700">'.htmlspecialchars($diffDays).' days left</span>';
                           } else {
-                            echo htmlspecialchars($date);
+                            echo '<span class="inline-block mt-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700">Expired '.htmlspecialchars(abs($diffDays)).' days ago</span>';
                           }
-                        ?>
-                      </span>
+                        }
+                      ?>
                     </div>
                   </div>
                   <div class="bg-indigo-50 px-6 py-3">
