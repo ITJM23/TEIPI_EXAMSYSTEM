@@ -9,17 +9,19 @@ if (empty($emp_id)) {
     exit;
 }
 
-// Ensure Employee_Patches table exists
+// Ensure Employee_Patches table exists with Expiration_Date
 $create_table = "IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'dbo.Employee_Patches') AND type in (N'U')) 
     CREATE TABLE dbo.Employee_Patches (
         Emp_ID NVARCHAR(MAX) NOT NULL,
         Patch_ID INT NOT NULL,
         Date_Earned DATETIME DEFAULT GETDATE(),
+        Expiration_Date DATETIME NULL,
         PRIMARY KEY (Emp_ID, Patch_ID)
     )";
 @sqlsrv_query($con3, $create_table);
+@sqlsrv_query($con3, "IF COL_LENGTH('dbo.Employee_Patches','Expiration_Date') IS NULL ALTER TABLE dbo.Employee_Patches ADD Expiration_Date DATETIME NULL");
 
-// Fetch patches earned by this employee
+// Fetch patches earned by this employee (filter out expired ones)
 // Patches are earned when employee passes an exam linked to that patch
 $sql = "
     SELECT DISTINCT 
@@ -27,6 +29,7 @@ $sql = "
         p.Patch_Name, 
         p.Patch_Description,
         ep.Date_Earned,
+        ep.Expiration_Date,
         (SELECT COUNT(*) FROM dbo.Exam_Patches WHERE Patch_ID = p.Patch_ID) AS total_exams,
         (SELECT COUNT(*) FROM dbo.Exam_Patches ep2 
          INNER JOIN dbo.Results r ON ep2.Exam_ID = r.Exam_ID 
@@ -34,6 +37,7 @@ $sql = "
     FROM dbo.Employee_Patches ep
     INNER JOIN dbo.Patches p ON ep.Patch_ID = p.Patch_ID
     WHERE ep.Emp_ID = ?
+    AND (ep.Expiration_Date IS NULL OR ep.Expiration_Date >= GETDATE())
     ORDER BY ep.Date_Earned DESC
 ";
 $stmt = sqlsrv_query($con3, $sql, [$emp_id, $emp_id]);
@@ -46,7 +50,7 @@ if ($stmt) {
     sqlsrv_free_stmt($stmt);
 }
 
-// Fetch available patches (not yet earned) that employee can work toward
+// Fetch available patches (not yet earned - excluding both active AND expired patches)
 $sql_available = "
     SELECT DISTINCT
         p.Patch_ID,
@@ -57,7 +61,9 @@ $sql_available = "
          INNER JOIN dbo.Results r ON ep2.Exam_ID = r.Exam_ID 
          WHERE ep2.Patch_ID = p.Patch_ID AND r.Emp_ID = ? AND r.Score >= (r.TotalQuestions * 0.75)) AS exams_passed
     FROM dbo.Patches p
-    WHERE p.Patch_ID NOT IN (SELECT Patch_ID FROM dbo.Employee_Patches WHERE Emp_ID = ?)
+    WHERE p.Patch_ID NOT IN (
+        SELECT Patch_ID FROM dbo.Employee_Patches WHERE Emp_ID = ?
+    )
     ORDER BY p.Patch_Name
 ";
 $stmt_avail = sqlsrv_query($con3, $sql_available, [$emp_id, $emp_id]);
@@ -68,6 +74,35 @@ if ($stmt_avail) {
         $available_patches[] = $row;
     }
     sqlsrv_free_stmt($stmt_avail);
+}
+
+// Fetch expired patches
+$sql_expired = "
+    SELECT DISTINCT 
+        p.Patch_ID, 
+        p.Patch_Name, 
+        p.Patch_Description,
+        ep.Date_Earned,
+        ep.Expiration_Date,
+        (SELECT COUNT(*) FROM dbo.Exam_Patches WHERE Patch_ID = p.Patch_ID) AS total_exams,
+        (SELECT COUNT(*) FROM dbo.Exam_Patches ep2 
+         INNER JOIN dbo.Results r ON ep2.Exam_ID = r.Exam_ID 
+         WHERE ep2.Patch_ID = p.Patch_ID AND r.Emp_ID = ? AND r.Score >= (r.TotalQuestions * 0.75)) AS exams_passed
+    FROM dbo.Employee_Patches ep
+    INNER JOIN dbo.Patches p ON ep.Patch_ID = p.Patch_ID
+    WHERE ep.Emp_ID = ?
+    AND ep.Expiration_Date IS NOT NULL 
+    AND ep.Expiration_Date < GETDATE()
+    ORDER BY ep.Expiration_Date DESC
+";
+$stmt_expired = sqlsrv_query($con3, $sql_expired, [$emp_id, $emp_id]);
+$expired_patches = [];
+
+if ($stmt_expired) {
+    while ($row = sqlsrv_fetch_array($stmt_expired, SQLSRV_FETCH_ASSOC)) {
+        $expired_patches[] = $row;
+    }
+    sqlsrv_free_stmt($stmt_expired);
 }
 ?>
 
@@ -274,6 +309,80 @@ if ($stmt_avail) {
               </div>
             <?php endif; ?>
           </div>
+
+          <!-- Expired Patches -->
+          <?php if (!empty($expired_patches)): ?>
+          <div class="mt-10">
+            <h2 class="text-2xl font-bold text-red-600 mb-6">⚠️ Expired Patches</h2>
+            <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+              <p class="text-sm text-yellow-800">
+                <strong>Note:</strong> These patches have expired. Retake the linked exams to reclaim them.
+              </p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <?php foreach ($expired_patches as $patch): ?>
+                <div class="bg-white rounded-2xl shadow hover:shadow-lg transition overflow-hidden border-l-4 border-red-500">
+                  <div class="p-6">
+                    <div class="flex items-start justify-between mb-4">
+                      <div class="text-4xl">🔧</div>
+                      <span class="inline-block px-3 py-1 text-xs font-semibold text-red-600 bg-red-50 rounded-full">EXPIRED</span>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-2"><?php echo htmlspecialchars($patch['Patch_Name']); ?></h3>
+                    <p class="text-sm text-slate-600 mb-4"><?php echo htmlspecialchars($patch['Patch_Description'] ?? 'Skill patch'); ?></p>
+                    
+                    <div class="space-y-1 text-sm mb-4">
+                      <div class="flex items-center justify-between text-slate-600">
+                        <span>Originally Earned:</span>
+                        <span class="font-medium">
+                          <?php 
+                            $date = $patch['Date_Earned'];
+                            if ($date instanceof DateTime) {
+                              echo $date->format('M d, Y');
+                            } else {
+                              echo htmlspecialchars($date);
+                            }
+                          ?>
+                        </span>
+                      </div>
+                      <div class="flex items-center justify-between text-red-600">
+                        <span>Expired On:</span>
+                        <span class="font-medium">
+                          <?php 
+                            $exp = $patch['Expiration_Date'];
+                            if ($exp instanceof DateTime) {
+                              echo $exp->format('M d, Y');
+                              $daysAgo = (int)date_diff(new DateTime(), $exp)->format('%r%a');
+                              if ($daysAgo < 0) {
+                                echo ' <span class="text-xs">(' . abs($daysAgo) . ' days ago)</span>';
+                              }
+                            } else {
+                              echo htmlspecialchars($exp);
+                            }
+                          ?>
+                        </span>
+                      </div>
+                    </div>
+
+                    <!-- Progress bar showing exams completed -->
+                    <div class="mb-4">
+                      <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs font-medium text-slate-600">Exams Completed</span>
+                        <span class="text-xs font-bold text-red-600"><?php echo $patch['exams_passed']; ?>/<?php echo $patch['total_exams']; ?></span>
+                      </div>
+                      <div class="w-full bg-slate-200 rounded-full h-2">
+                        <div class="bg-red-500 h-2 rounded-full" style="width: <?php echo ($patch['total_exams'] > 0) ? (($patch['exams_passed'] / $patch['total_exams']) * 100) : 0; ?>%"></div>
+                      </div>
+                    </div>
+
+                    <p class="text-sm text-red-700 bg-red-50 p-2 rounded">
+                      <strong>Action Required:</strong> Retake <?php echo $patch['total_exams']; ?> exam<?php echo $patch['total_exams'] > 1 ? 's' : ''; ?> to reclaim this patch.
+                    </p>
+                  </div>
+                </div>
+              <?php endforeach; ?>
+            </div>
+          </div>
+          <?php endif; ?>
 
           <!-- Available Patches -->
           <div>

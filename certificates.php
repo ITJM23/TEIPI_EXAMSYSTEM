@@ -32,31 +32,24 @@ function employeeHasPassedExam($con, $emp, $examId) {
 }
 
 function isPatchCompleted($con, $emp, $patchId) {
-  // Prefer Employee_Patches table if it exists
-  $chkSql = "IF OBJECT_ID('dbo.Employee_Patches','U') IS NULL SELECT 0 as cnt ELSE SELECT COUNT(*) as cnt FROM dbo.Employee_Patches WHERE Emp_ID = ? AND Patch_ID = ?";
+  // Check Employee_Patches table - ONLY return true if patch exists and is NOT expired
+  // No fallback to exam results - patch must be explicitly in Employee_Patches table
+  $chkSql = "IF OBJECT_ID('dbo.Employee_Patches','U') IS NULL 
+             SELECT 0 as cnt 
+             ELSE 
+             SELECT COUNT(*) as cnt 
+             FROM dbo.Employee_Patches 
+             WHERE Emp_ID = ? AND Patch_ID = ? 
+             AND (Expiration_Date IS NULL OR Expiration_Date >= GETDATE())";
   $chkStmt = sqlsrv_query($con, $chkSql, [$emp, $patchId]);
   if ($chkStmt) {
     $r = sqlsrv_fetch_array($chkStmt, SQLSRV_FETCH_ASSOC);
     sqlsrv_free_stmt($chkStmt);
     $cnt = (int)($r['cnt'] ?? 0);
-    if ($cnt > 0) return true;
+    return $cnt > 0;
   }
-
-  // Fallback: check that the employee has passed all exams linked to this patch
-  $sql = "SELECT Exam_ID FROM dbo.Exam_Patches WHERE Patch_ID = ?";
-  $stmt = sqlsrv_query($con, $sql, [$patchId]);
-  $exams = [];
-  if ($stmt) {
-    while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
-      $exams[] = $row['Exam_ID'];
-    }
-    sqlsrv_free_stmt($stmt);
-  }
-  if (empty($exams)) return false;
-  foreach ($exams as $eid) {
-    if (!employeeHasPassedExam($con, $emp, $eid)) return false;
-  }
-  return true;
+  
+  return false;
 }
 
 function isCertificateEligible($con, $emp, $certId) {
@@ -81,37 +74,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
   $claim_cert_id = intval($_POST['cert_id'] ?? 0);
   if ($claim_cert_id > 0) {
     if (isCertificateEligible($con3, $emp_id, $claim_cert_id)) {
-      // ensure not already assigned
-      $chk = sqlsrv_query($con3, "SELECT COUNT(*) as cnt FROM dbo.Employee_Certificates WHERE Emp_ID = ? AND Certificate_ID = ?", [$emp_id, $claim_cert_id]);
-      $already = 0;
+      // Check if already assigned (including expired ones)
+      $chk = sqlsrv_query($con3, "SELECT Certificate_ID, Expiration_Date FROM dbo.Employee_Certificates WHERE Emp_ID = ? AND Certificate_ID = ?", [$emp_id, $claim_cert_id]);
+      $existing = null;
       if ($chk) {
-        $rr = sqlsrv_fetch_array($chk, SQLSRV_FETCH_ASSOC);
-        $already = (int)($rr['cnt'] ?? 0);
+        $existing = sqlsrv_fetch_array($chk, SQLSRV_FETCH_ASSOC);
         sqlsrv_free_stmt($chk);
       }
-      if ($already === 0) {
+      
+      $isExpired = false;
+      if ($existing && $existing['Expiration_Date']) {
+        $expDate = $existing['Expiration_Date'];
+        if ($expDate instanceof DateTime) {
+          $isExpired = $expDate < new DateTime();
+        }
+      }
+      
+      if ($existing && !$isExpired) {
+        $claim_error = "You already have this certificate.";
+      } else {
         // Ensure Employee_Certificates has Expiration_Date
         @sqlsrv_query($con3, "IF COL_LENGTH('dbo.Employee_Certificates','Expiration_Date') IS NULL ALTER TABLE dbo.Employee_Certificates ADD Expiration_Date DATETIME NULL");
         // Ensure Certificates has Expiration_Days for duration support
         @sqlsrv_query($con3, "IF COL_LENGTH('dbo.Certificates','Expiration_Days') IS NULL ALTER TABLE dbo.Certificates ADD Expiration_Days INT NULL");
-        // Insert with computed Expiration_Date: unlimited -> NULL; days -> DATEADD; date -> use abs date
-        $ins = sqlsrv_query($con3, 
-          "INSERT INTO dbo.Employee_Certificates (Emp_ID, Certificate_ID, Date_Earned, Expiration_Date)
-           SELECT ?, ?, GETDATE(), CASE 
-             WHEN ISNULL(c.is_Unlimited,0)=1 THEN NULL
-             WHEN c.Expiration_Days IS NOT NULL THEN DATEADD(DAY, c.Expiration_Days, GETDATE())
-             WHEN c.Expiration_Date IS NOT NULL THEN c.Expiration_Date
-             ELSE NULL END
-           FROM dbo.Certificates c WHERE c.Certificate_ID = ?",
-          [$emp_id, $claim_cert_id, $claim_cert_id]
-        );
-        if ($ins === false) {
-          $claim_error = "Error claiming certificate.";
+        
+        if ($isExpired) {
+          // Update existing expired certificate
+          $upd = sqlsrv_query($con3, 
+            "UPDATE ec
+             SET ec.Date_Earned = GETDATE(), 
+                 ec.Expiration_Date = CASE 
+                   WHEN ISNULL(c.is_Unlimited,0)=1 THEN NULL
+                   WHEN c.Expiration_Days IS NOT NULL THEN DATEADD(DAY, c.Expiration_Days, GETDATE())
+                   WHEN c.Expiration_Date IS NOT NULL THEN c.Expiration_Date
+                   ELSE NULL END
+             FROM dbo.Employee_Certificates ec
+             JOIN dbo.Certificates c ON c.Certificate_ID = ec.Certificate_ID
+             WHERE ec.Emp_ID = ? AND ec.Certificate_ID = ?",
+            [$emp_id, $claim_cert_id]
+          );
+          if ($upd === false) {
+            $claim_error = "Error reclaiming certificate.";
+          } else {
+            $claim_success = "Certificate reclaimed — congratulations!";
+          }
         } else {
-          $claim_success = "Certificate claimed — congratulations!";
+          // Insert new certificate
+          $ins = sqlsrv_query($con3, 
+            "INSERT INTO dbo.Employee_Certificates (Emp_ID, Certificate_ID, Date_Earned, Expiration_Date)
+             SELECT ?, ?, GETDATE(), CASE 
+               WHEN ISNULL(c.is_Unlimited,0)=1 THEN NULL
+               WHEN c.Expiration_Days IS NOT NULL THEN DATEADD(DAY, c.Expiration_Days, GETDATE())
+               WHEN c.Expiration_Date IS NOT NULL THEN c.Expiration_Date
+               ELSE NULL END
+             FROM dbo.Certificates c WHERE c.Certificate_ID = ?",
+            [$emp_id, $claim_cert_id, $claim_cert_id]
+          );
+          if ($ins === false) {
+            $claim_error = "Error claiming certificate.";
+          } else {
+            $claim_success = "Certificate claimed — congratulations!";
+          }
         }
-      } else {
-        $claim_error = "You already have this certificate.";
       }
     } else {
       $claim_error = "You do not meet the required patches to claim this certificate.";
@@ -130,9 +154,9 @@ if ($all_stmt) {
   sqlsrv_free_stmt($all_stmt);
 }
 
-// Fetch earned certificate ids for this employee
+// Fetch earned certificate ids for this employee (non-expired only)
 $earned_ids = [];
-$sql_earned = "SELECT Certificate_ID FROM dbo.Employee_Certificates WHERE Emp_ID = ?";
+$sql_earned = "SELECT Certificate_ID FROM dbo.Employee_Certificates WHERE Emp_ID = ? AND (Expiration_Date IS NULL OR Expiration_Date >= GETDATE())";
 $stmt_earned = sqlsrv_query($con3, $sql_earned, [$emp_id]);
 if ($stmt_earned) {
   while ($r = sqlsrv_fetch_array($stmt_earned, SQLSRV_FETCH_ASSOC)) {
@@ -140,11 +164,13 @@ if ($stmt_earned) {
   }
   sqlsrv_free_stmt($stmt_earned);
 }
-// Fetch employee certificates
+
+// Fetch active (non-expired) employee certificates
 $sql = "SELECT c.Certificate_ID, c.Certificate_Name, c.Certificate_Description, ec.Date_Earned, ec.Expiration_Date
   FROM dbo.Employee_Certificates ec
   JOIN dbo.Certificates c ON ec.Certificate_ID = c.Certificate_ID
   WHERE ec.Emp_ID = ?
+  AND (ec.Expiration_Date IS NULL OR ec.Expiration_Date >= GETDATE())
   ORDER BY ec.Date_Earned DESC";
 $stmt = sqlsrv_query($con3, $sql, [$emp_id]);
 $certificates = [];
@@ -154,6 +180,24 @@ if ($stmt) {
         $certificates[] = $row;
     }
     sqlsrv_free_stmt($stmt);
+}
+
+// Fetch expired certificates
+$sql_expired = "SELECT c.Certificate_ID, c.Certificate_Name, c.Certificate_Description, ec.Date_Earned, ec.Expiration_Date
+  FROM dbo.Employee_Certificates ec
+  JOIN dbo.Certificates c ON ec.Certificate_ID = c.Certificate_ID
+  WHERE ec.Emp_ID = ?
+  AND ec.Expiration_Date IS NOT NULL 
+  AND ec.Expiration_Date < GETDATE()
+  ORDER BY ec.Expiration_Date DESC";
+$stmt_expired = sqlsrv_query($con3, $sql_expired, [$emp_id]);
+$expired_certificates = [];
+
+if ($stmt_expired) {
+    while ($row = sqlsrv_fetch_array($stmt_expired, SQLSRV_FETCH_ASSOC)) {
+        $expired_certificates[] = $row;
+    }
+    sqlsrv_free_stmt($stmt_expired);
 }
 ?>
 
@@ -336,6 +380,92 @@ if ($stmt) {
                 </div>
               <?php endforeach; ?>
             </div>
+
+            <!-- Expired Certificates (Reclaim Available) -->
+            <?php if (!empty($expired_certificates)): ?>
+            <div class="mt-10">
+              <h2 class="text-xl font-semibold mb-4 text-red-600">⚠️ Expired Certificates</h2>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <?php foreach ($expired_certificates as $cert): ?>
+                  <?php
+                    // Check if eligible to reclaim (all required patches must be non-expired)
+                    $eligible = isCertificateEligible($con3, $emp_id, $cert['Certificate_ID']);
+                    
+                    // Get required patch names
+                    $reqPatchNames = [];
+                    $mapStmt = sqlsrv_query($con3, "IF OBJECT_ID('dbo.Certificate_Patches','U') IS NULL SELECT 0 as cnt ELSE SELECT cp.Patch_ID, p.Patch_Name FROM dbo.Certificate_Patches cp JOIN dbo.Patches p ON cp.Patch_ID = p.Patch_ID WHERE cp.Certificate_ID = ?", [$cert['Certificate_ID']]);
+                    if ($mapStmt) {
+                      while ($rr = sqlsrv_fetch_array($mapStmt, SQLSRV_FETCH_ASSOC)) {
+                        if (isset($rr['Patch_Name'])) $reqPatchNames[] = $rr['Patch_Name'];
+                      }
+                      sqlsrv_free_stmt($mapStmt);
+                    }
+                  ?>
+                  <div class="bg-white rounded-2xl shadow hover:shadow-lg transition overflow-hidden border-l-4 border-red-500">
+                    <div class="p-6">
+                      <div class="flex items-start justify-between mb-4">
+                        <div class="text-4xl">🏅</div>
+                        <span class="inline-block px-3 py-1 text-xs font-semibold text-red-600 bg-red-50 rounded-full">EXPIRED</span>
+                      </div>
+                      <h3 class="text-lg font-bold text-slate-800 mb-2"><?php echo htmlspecialchars($cert['Certificate_Name']); ?></h3>
+                      <p class="text-sm text-slate-600 mb-4"><?php echo htmlspecialchars($cert['Certificate_Description'] ?? 'Professional certification'); ?></p>
+                      
+                      <div class="space-y-1 text-sm text-slate-600 mb-4">
+                        <div class="flex items-center justify-between">
+                          <span>Originally Earned:</span>
+                          <span class="font-medium">
+                            <?php 
+                              $date = $cert['Date_Earned'];
+                              if ($date instanceof DateTime) {
+                                echo $date->format('M d, Y');
+                              } else {
+                                echo htmlspecialchars($date);
+                              }
+                            ?>
+                          </span>
+                        </div>
+                        <div class="flex items-center justify-between text-red-600">
+                          <span>Expired On:</span>
+                          <span class="font-medium">
+                            <?php 
+                              $exp = $cert['Expiration_Date'];
+                              if ($exp instanceof DateTime) {
+                                echo $exp->format('M d, Y');
+                              } else {
+                                echo htmlspecialchars($exp);
+                              }
+                            ?>
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <?php if (!empty($reqPatchNames)): ?>
+                        <div class="text-sm text-slate-600 mb-3">
+                          <span class="font-semibold">Required patches:</span><br>
+                          <span class="text-xs"><?php echo htmlspecialchars(implode(', ', $reqPatchNames)); ?></span>
+                        </div>
+                      <?php endif; ?>
+                      
+                      <form method="POST" action="">
+                        <input type="hidden" name="action" value="claim">
+                        <input type="hidden" name="cert_id" value="<?php echo $cert['Certificate_ID']; ?>">
+                        <?php if ($eligible): ?>
+                          <button type="submit" class="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold transition">
+                            ✓ Reclaim Certificate
+                          </button>
+                        <?php else: ?>
+                          <button type="button" disabled class="w-full px-4 py-2 bg-slate-300 text-slate-500 rounded-lg font-semibold cursor-not-allowed">
+                            🔒 Patches Required
+                          </button>
+                          <p class="text-xs text-red-600 mt-2 text-center">Complete all required patches to reclaim</p>
+                        <?php endif; ?>
+                      </form>
+                    </div>
+                  </div>
+                <?php endforeach; ?>
+              </div>
+            </div>
+            <?php endif; ?>
 
             <!-- Available to Claim -->
             <div class="mt-10">

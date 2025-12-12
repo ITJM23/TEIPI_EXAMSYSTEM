@@ -152,16 +152,16 @@ include "includes/db.php";
                             $avg_score = $row['avg_score'] ? round($row['avg_score'], 2) : 0;
                     }
 
-                    // earned patches and certificates counts for this employee
+                    // earned patches and certificates counts for this employee (only non-expired)
                     $earned_patches = 0;
                     $earned_certs = 0;
-                    $stmt_p = @sqlsrv_query($con3, "IF OBJECT_ID('dbo.Employee_Patches','U') IS NULL SELECT 0 as cnt ELSE SELECT COUNT(*) as cnt FROM dbo.Employee_Patches WHERE Emp_ID = ?", [$emp_id]);
+                    $stmt_p = @sqlsrv_query($con3, "IF OBJECT_ID('dbo.Employee_Patches','U') IS NULL SELECT 0 as cnt ELSE SELECT COUNT(*) as cnt FROM dbo.Employee_Patches WHERE Emp_ID = ? AND (Expiration_Date IS NULL OR Expiration_Date >= GETDATE())", [$emp_id]);
                     if ($stmt_p) {
                         $r = sqlsrv_fetch_array($stmt_p, SQLSRV_FETCH_ASSOC);
                         $earned_patches = (int)($r['cnt'] ?? 0);
                         sqlsrv_free_stmt($stmt_p);
                     }
-                    $stmt_c = @sqlsrv_query($con3, "IF OBJECT_ID('dbo.Employee_Certificates','U') IS NULL SELECT 0 as cnt ELSE SELECT COUNT(*) as cnt FROM dbo.Employee_Certificates WHERE Emp_ID = ?", [$emp_id]);
+                    $stmt_c = @sqlsrv_query($con3, "IF OBJECT_ID('dbo.Employee_Certificates','U') IS NULL SELECT 0 as cnt ELSE SELECT COUNT(*) as cnt FROM dbo.Employee_Certificates WHERE Emp_ID = ? AND (Expiration_Date IS NULL OR Expiration_Date >= GETDATE())", [$emp_id]);
                     if ($stmt_c) {
                         $r = sqlsrv_fetch_array($stmt_c, SQLSRV_FETCH_ASSOC);
                         $earned_certs = (int)($r['cnt'] ?? 0);
